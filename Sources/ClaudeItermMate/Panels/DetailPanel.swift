@@ -79,6 +79,11 @@ struct DetailView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
+            if let branch = item.branch, !branch.isEmpty {
+                Text("⎇ \(branch)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
             Divider()
             ScrollView {
                 Text(item.fullMessage)

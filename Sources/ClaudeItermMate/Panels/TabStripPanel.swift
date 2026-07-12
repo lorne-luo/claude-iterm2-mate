@@ -88,13 +88,15 @@ private struct EdgeTabView: View {
     let item: ReminderItem
 
     var body: some View {
-        Text(String(item.projectName.prefix(1)).uppercased())
+        let identity = item.identity
+        Text(identity.worktreeGlyph)
             .font(.system(size: 13, weight: .bold))
+            .foregroundStyle(ReminderPalette.glyphForeground(at: identity.colorIndex))
             .frame(width: EdgeGeometry.tabWidth, height: EdgeGeometry.tabHeight)
-        .background(.regularMaterial, in: UnevenRoundedRectangle(
-            topLeadingRadius: 10, bottomLeadingRadius: 10,
-            bottomTrailingRadius: 0, topTrailingRadius: 0
-        ))
-        .contentShape(Rectangle())
+            .background(ReminderPalette.color(at: identity.colorIndex), in: UnevenRoundedRectangle(
+                topLeadingRadius: 10, bottomLeadingRadius: 10,
+                bottomTrailingRadius: 0, topTrailingRadius: 0
+            ))
+            .contentShape(Rectangle())
     }
 }
