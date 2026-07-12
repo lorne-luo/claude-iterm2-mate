@@ -1,10 +1,12 @@
 import AppKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = ReminderStore()
     private(set) var coordinator: ReminderCoordinator!
     private var server: NotifyServer?
     private var tabStrip: TabStripPanel?
+    private let detail = DetailPanel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel())
@@ -13,7 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onClick: { [weak self] item in
                 self?.store.remove(sessionUUID: item.sessionUUID)
             },
-            onHover: { _, _ in } // DetailPanel wired in Task 8
+            onHover: { [weak self] item, tabFrame in
+                self?.detail.hoverChanged(item: item, tabFrame: tabFrame)
+            }
         )
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
