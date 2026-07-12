@@ -15,8 +15,7 @@ full reply; click it to jump to the owning iTerm2 pane (focused + maximized).
 
 ## Build & run
 
-    swift build -c release
-    swift run
+    swift run -c release
 
 ## Hook installation
 
@@ -38,5 +37,10 @@ notification — behavior degrades gracefully to the status quo.
 ## Menu bar
 
 Pause reminders · Clear all tabs · Launch at login · Quit.
-A warning icon means it2/iterm-focus-pane.py was not found; tabs still work
-but clicking won't jump (`uv tool install it2` to fix).
+A warning icon means either it2/iterm-focus-pane.py was not found (tabs still
+work but clicking won't jump — `uv tool install it2` to fix) or the socket
+server failed to start (the menu shows the reason).
+
+**Launch at login** only works from a bundled `.app`; it is a no-op when the
+app is started via `swift run` (`SMAppService` requires a registered bundle).
+To use it, wrap the built binary in an `.app` bundle and launch that.

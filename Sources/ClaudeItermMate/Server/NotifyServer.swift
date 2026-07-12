@@ -23,7 +23,6 @@ final class NotifyServer {
     private let socketPath: String
     private let handler: (NotifyPayload) -> Void
     private let queue = DispatchQueue(label: "notify-server")
-    private var listenerFD: Int32 = -1
     private var source: DispatchSourceRead?
 
     init(socketPath: String, handler: @escaping (NotifyPayload) -> Void) {
@@ -68,24 +67,23 @@ final class NotifyServer {
             throw StartError.socketFailed("listen(): errno \(errno)")
         }
 
-        listenerFD = fd
         let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-        src.setEventHandler { [weak self] in self?.acceptOne() }
+        src.setEventHandler { [weak self] in self?.acceptOne(listenerFD: fd) }
+        // Close the listener FD in the cancel handler: it runs on `queue`
+        // after the last acceptOne completes, so the FD is never closed out
+        // from under an in-flight accept/read.
+        src.setCancelHandler { close(fd) }
         source = src
         src.resume()
     }
 
     func stop() {
-        source?.cancel()
+        source?.cancel() // cancel handler closes the listener FD on `queue`
         source = nil
-        if listenerFD >= 0 {
-            close(listenerFD)
-            listenerFD = -1
-        }
-        unlink(socketPath)
+        unlink(socketPath) // idempotent; safe to call from the main actor
     }
 
-    private func acceptOne() {
+    private func acceptOne(listenerFD: Int32) {
         let fd = accept(listenerFD, nil, nil)
         guard fd >= 0 else { return }
         var tv = timeval(tv_sec: Self.readTimeoutSeconds, tv_usec: 0)

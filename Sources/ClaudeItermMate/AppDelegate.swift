@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
         } catch {
             NSLog("NotifyServer failed to start: \(error)")
+            menuBar?.showServerError("\(error)")
         }
     }
 

@@ -7,6 +7,7 @@ final class MenuBarController: NSObject {
     private let coordinator: ReminderCoordinator
     private let focusAvailable: Bool
     private var statusItem: NSStatusItem!
+    private var serverError: String?
 
     init(store: ReminderStore, coordinator: ReminderCoordinator, focusAvailable: Bool) {
         self.store = store
@@ -14,16 +15,35 @@ final class MenuBarController: NSObject {
         self.focusAvailable = focusAvailable
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        let symbol = focusAvailable ? "bell.badge" : "exclamationmark.triangle"
+        refreshIcon()
+        statusItem.menu = buildMenu()
+    }
+
+    /// Surface a fatal server-start failure: swap the icon to a warning and
+    /// pin the reason to the top of the menu. Without this the app looks
+    /// healthy while silently receiving nothing.
+    func showServerError(_ message: String) {
+        serverError = message
+        refreshIcon()
+        statusItem.menu = buildMenu()
+    }
+
+    private func refreshIcon() {
+        let symbol = (focusAvailable && serverError == nil) ? "bell.badge" : "exclamationmark.triangle"
         statusItem.button?.image = NSImage(
             systemSymbolName: symbol,
             accessibilityDescription: "Claude iTerm2 Mate"
         )
-        statusItem.menu = buildMenu()
     }
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+        if let serverError {
+            let item = NSMenuItem(title: "Not receiving: \(serverError)", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+            menu.addItem(.separator())
+        }
         if !focusAvailable {
             let warn = NSMenuItem(
                 title: "it2 not found — run: uv tool install it2",
