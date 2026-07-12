@@ -39,6 +39,24 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertTrue(store.items.isEmpty)
     }
 
+    func testOlderSessionTimerDoesNotHideNewerToast() async throws {
+        let store = ReminderStore()
+        let toast = SpyToast()
+        let coordinator = ReminderCoordinator(store: store, toastDuration: 0.2, toastPanel: toast)
+        coordinator.handle(payload(session: "A"))
+        try await Task.sleep(for: .milliseconds(100))
+        coordinator.handle(payload(session: "B")) // different session, mid-A-toast
+        // Wait past A's timer (~0.2) but before B's timer (~0.3).
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(toast.shown, ["A", "B"])
+        XCTAssertEqual(toast.hidden, 0, "A's expiring timer must not hide B's visible toast")
+        XCTAssertEqual(store.queued.map(\.sessionUUID), ["A"], "A should be queued once its toast expires")
+        // Wait past B's timer.
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(toast.hidden, 1, "B's own timer hides B's toast")
+        XCTAssertEqual(Set(store.queued.map(\.sessionUUID)), ["A", "B"])
+    }
+
     func testReupsertRestartsToastCycle() async throws {
         let store = ReminderStore()
         let toast = SpyToast()
