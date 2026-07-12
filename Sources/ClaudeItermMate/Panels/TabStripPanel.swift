@@ -72,7 +72,7 @@ struct TabStripView: View {
     var body: some View {
         VStack(spacing: EdgeGeometry.tabSpacing) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                EdgeTabView(item: item, position: index + 1)
+                EdgeTabView(item: item)
                     .onTapGesture { onClick(item) }
                     .onHover { inside in
                         onHover(inside ? item : nil, inside ? index : nil)
@@ -86,17 +86,11 @@ struct TabStripView: View {
 // Named EdgeTabView to avoid shadowing SwiftUI.TabView.
 private struct EdgeTabView: View {
     let item: ReminderItem
-    let position: Int
 
     var body: some View {
-        VStack(spacing: 2) {
-            Text(String(item.projectName.prefix(1)).uppercased())
-                .font(.system(size: 18, weight: .bold))
-            Text("\(position)")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-        }
-        .frame(width: EdgeGeometry.tabWidth, height: EdgeGeometry.tabHeight)
+        Text(String(item.projectName.prefix(1)).uppercased())
+            .font(.system(size: 13, weight: .bold))
+            .frame(width: EdgeGeometry.tabWidth, height: EdgeGeometry.tabHeight)
         .background(.regularMaterial, in: UnevenRoundedRectangle(
             topLeadingRadius: 10, bottomLeadingRadius: 10,
             bottomTrailingRadius: 0, topTrailingRadius: 0

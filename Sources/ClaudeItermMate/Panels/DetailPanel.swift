@@ -56,13 +56,26 @@ struct DetailView: View {
     let item: ReminderItem
     let onHoverChanged: (Bool) -> Void
 
+    /// Static "2 minutes ago" snapshot computed when the card opens — unlike
+    /// SwiftUI's `.relative` style it does not tick like a countdown. Within
+    /// the first few seconds (or any near-zero/future clock skew) it reads
+    /// "just now" instead of "in 0 seconds".
+    private static func relativeTime(_ timestamp: Double) -> String {
+        let date = Date(timeIntervalSince1970: timestamp / 1000)
+        let elapsed = Date().timeIntervalSince(date)
+        if elapsed < 10 { return "just now" }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f.localizedString(for: date, relativeTo: Date())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(item.projectName)
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
-                Text(Date(timeIntervalSince1970: item.timestamp / 1000), style: .relative)
+                Text(Self.relativeTime(item.timestamp))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }

@@ -3,7 +3,7 @@ import Foundation
 /// Pure frame math for the right-edge tab strip, toast, and detail panels.
 /// All rects are in AppKit screen coordinates (y grows upward).
 enum EdgeGeometry {
-    static let tabWidth: CGFloat = 44
+    static let tabWidth: CGFloat = 28
     static let tabHeight: CGFloat = 64
     static let tabSpacing: CGFloat = 8
     static let screenMargin: CGFloat = 12
