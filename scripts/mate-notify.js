@@ -26,7 +26,14 @@ const SOCKET_PATH =
   path.join(os.homedir(), "Library/Application Support/ClaudeItermMate/notify.sock");
 const CONNECT_TIMEOUT_MS = 500;
 const MAX_BODY_LENGTH = 100;
-const MAX_STDIN = 1024 * 1024;
+// Upper bound on stdin read, well above any realistic hook input. It must be
+// comfortably larger than MAX_PAYLOAD_BYTES so a large-but-valid message is
+// parsed intact (then trimmed for the wire) rather than truncated mid-JSON,
+// which would fail JSON.parse and drop the notification with no fallback.
+const MAX_STDIN = 8 * 1024 * 1024;
+// Must match NotifyPayload.maxPayloadBytes in the app; the server drops any
+// connection whose encoded payload exceeds this many UTF-8 bytes.
+const MAX_PAYLOAD_BYTES = 1024 * 1024;
 
 function extractSummary(message) {
   if (!message || typeof message !== "string") return "Done";
@@ -77,14 +84,25 @@ function main(raw) {
     return;
   }
 
-  const payload = JSON.stringify({
+  const fields = {
     session_uuid: itermSession.split(":").pop(),
     cwd,
     title,
     summary,
     full_message: typeof message === "string" ? message : "",
     timestamp: Date.now(),
-  });
+  };
+  // Keep the ENCODED payload under the server's byte limit. Measuring the
+  // stringified result accounts for JSON escaping and multi-byte UTF-8, which
+  // a plain character-count cap (MAX_STDIN) does not. Trim full_message until
+  // it fits, so an oversized reply degrades to a shorter one instead of being
+  // silently dropped by the server with no fallback.
+  let payload = JSON.stringify(fields);
+  while (Buffer.byteLength(payload, "utf8") > MAX_PAYLOAD_BYTES && fields.full_message.length > 0) {
+    const cut = Math.max(1024, Math.floor(fields.full_message.length * 0.1));
+    fields.full_message = fields.full_message.slice(0, fields.full_message.length - cut);
+    payload = JSON.stringify(fields);
+  }
 
   let settled = false;
   const sock = net.createConnection(SOCKET_PATH);
