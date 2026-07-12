@@ -47,6 +47,31 @@ function extractSummary(message) {
     : firstLine;
 }
 
+// Best-effort git context for the payload. Runs only on the socket path (when
+// the app will actually use it). Short timeout; any failure (non-git dir,
+// detached HEAD, git missing) leaves the field undefined and never throws or
+// blocks the hook.
+function gitInfo(cwd) {
+  const run = (args) => {
+    try {
+      const r = spawnSync("git", ["-C", cwd, ...args], {
+        timeout: 500,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (r.status === 0 && typeof r.stdout === "string") {
+        const out = r.stdout.trim();
+        return out || undefined;
+      }
+    } catch {}
+    return undefined;
+  };
+  return {
+    repo_root: run(["rev-parse", "--show-toplevel"]),
+    branch: run(["symbolic-ref", "--short", "HEAD"]),
+  };
+}
+
 // AppleScript strings do not support backslash escapes: strip backslashes,
 // replace double quotes with curly quotes (same rules as desktop-notify.js).
 function notifyMacOS(title, body) {
@@ -84,6 +109,7 @@ function main(raw) {
     return;
   }
 
+  const git = gitInfo(cwd);
   const fields = {
     session_uuid: itermSession.split(":").pop(),
     cwd,
@@ -92,6 +118,8 @@ function main(raw) {
     full_message: typeof message === "string" ? message : "",
     timestamp: Date.now(),
   };
+  if (git.repo_root) fields.repo_root = git.repo_root;
+  if (git.branch) fields.branch = git.branch;
   // Keep the ENCODED payload under the server's byte limit. Measuring the
   // stringified result accounts for JSON escaping and multi-byte UTF-8, which
   // a plain character-count cap (MAX_STDIN) does not. Trim full_message until
