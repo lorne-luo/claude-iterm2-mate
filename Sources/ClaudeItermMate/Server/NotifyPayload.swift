@@ -9,12 +9,18 @@ struct NotifyPayload: Codable, Equatable {
     let summary: String
     let fullMessage: String
     let timestamp: Double
+    // Optional git context enriched by the Stop hook; absent for non-git dirs
+    // and for payloads produced before this feature. Backward compatible.
+    let repoRoot: String?
+    let branch: String?
 
     enum CodingKeys: String, CodingKey {
         case sessionUUID = "session_uuid"
         case cwd, title, summary
         case fullMessage = "full_message"
         case timestamp
+        case repoRoot = "repo_root"
+        case branch
     }
 
     var projectName: String { (cwd as NSString).lastPathComponent }

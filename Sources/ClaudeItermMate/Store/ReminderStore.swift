@@ -8,14 +8,17 @@ enum ReminderPhase: Equatable {
 
 struct ReminderItem: Identifiable, Equatable {
     let sessionUUID: String
-    var projectName: String
     var cwd: String
+    var repoRoot: String?
+    var branch: String?
     var summary: String
     var fullMessage: String
     var timestamp: Double
     var phase: ReminderPhase
 
     var id: String { sessionUUID }
+    var identity: ReminderIdentity { ReminderIdentity(repoRoot: repoRoot, branch: branch, cwd: cwd) }
+    var projectName: String { identity.project }
 }
 
 @Observable
@@ -32,8 +35,9 @@ final class ReminderStore {
         let token = UUID()
         let item = ReminderItem(
             sessionUUID: p.sessionUUID,
-            projectName: p.projectName,
             cwd: p.cwd,
+            repoRoot: p.repoRoot,
+            branch: p.branch,
             summary: p.summary,
             fullMessage: p.fullMessage,
             timestamp: p.timestamp,

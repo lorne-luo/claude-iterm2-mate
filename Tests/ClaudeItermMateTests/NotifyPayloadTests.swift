@@ -22,6 +22,21 @@ final class NotifyPayloadTests: XCTestCase {
         XCTAssertEqual(p?.projectName, "myproj")
     }
 
+    func testDecodesWithoutGitFields() {
+        let p = NotifyPayload.decode(json())
+        XCTAssertNil(p?.repoRoot)
+        XCTAssertNil(p?.branch)
+    }
+
+    func testDecodesWithGitFields() {
+        let p = NotifyPayload.decode(json([
+            "repo_root": "/Users/me/Workspace/myproj",
+            "branch": "feature/auth",
+        ]))
+        XCTAssertEqual(p?.repoRoot, "/Users/me/Workspace/myproj")
+        XCTAssertEqual(p?.branch, "feature/auth")
+    }
+
     func testRejectsInvalidJSON() {
         XCTAssertNil(NotifyPayload.decode(Data("not json".utf8)))
     }
