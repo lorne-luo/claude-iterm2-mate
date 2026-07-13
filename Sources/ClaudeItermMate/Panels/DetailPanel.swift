@@ -10,7 +10,7 @@ final class DetailPanel {
 
     static let showDelay: TimeInterval = 0.5
     static let hideGrace: TimeInterval = 0.2
-    static let width: CGFloat = 420
+    static let width: CGFloat = 520
     static let minHeight: CGFloat = 84
     static let maxHeightFraction: CGFloat = 0.6
 
