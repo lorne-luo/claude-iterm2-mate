@@ -91,9 +91,9 @@ private struct EdgeTabView: View {
         let identity = item.identity
         Text(identity.worktreeGlyph)
             .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(ReminderPalette.glyphForeground(at: identity.colorIndex))
+            .foregroundStyle(ReminderPalette.glyphForeground(at: identity.colorIndex, worktree: item.isWorktree))
             .frame(width: EdgeGeometry.tabWidth, height: EdgeGeometry.tabHeight)
-            .background(ReminderPalette.color(at: identity.colorIndex), in: UnevenRoundedRectangle(
+            .background(ReminderPalette.color(at: identity.colorIndex, worktree: item.isWorktree), in: UnevenRoundedRectangle(
                 topLeadingRadius: 10, bottomLeadingRadius: 10,
                 bottomTrailingRadius: 0, topTrailingRadius: 0
             ))
