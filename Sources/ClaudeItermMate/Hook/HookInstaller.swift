@@ -1,0 +1,145 @@
+import Foundation
+
+/// Installs the `mate-notify` Stop hook: copies the bundled script to a stable
+/// App Support path and registers it in `~/.claude/settings.json`.
+struct HookInstaller {
+    enum InstallError: Error {
+        case bundledScriptMissing
+        case settingsUnreadable
+    }
+
+    /// Stable install location for the script (alongside the notify socket).
+    static var scriptDestURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/ClaudeItermMate/mate-notify.js")
+    }
+
+    static var settingsURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/settings.json")
+    }
+
+    /// Pure, unit-tested settings transform. Returns `json` unchanged if any
+    /// existing Stop hook command already references `mate-notify.js`;
+    /// otherwise appends a new group with `command`, creating the `hooks` /
+    /// `Stop` containers when absent and preserving every other key, group and
+    /// hook.
+    /// The Stop hook command line. The script path is quoted because the App
+    /// Support path contains a space ("Application Support"); an unquoted path
+    /// makes `node` treat the first segment as the module and fail with
+    /// MODULE_NOT_FOUND.
+    static func hookCommand(scriptPath: String) -> String {
+        "node \"\(scriptPath)\""
+    }
+
+    static func settingsByAddingHook(_ json: [String: Any], command: String) -> [String: Any] {
+        var settings = json
+        var hooks = settings["hooks"] as? [String: Any] ?? [:]
+        var stop = hooks["Stop"] as? [[String: Any]] ?? []
+
+        for group in stop {
+            for entry in group["hooks"] as? [[String: Any]] ?? [] {
+                if let existing = entry["command"] as? String,
+                   existing.contains("mate-notify.js") {
+                    return json
+                }
+            }
+        }
+
+        stop.append([
+            "matcher": "",
+            "hooks": [["type": "command", "command": command]],
+        ])
+        hooks["Stop"] = stop
+        settings["hooks"] = hooks
+        return settings
+    }
+
+    /// Pure, unit-tested inverse of `settingsByAddingHook`. Drops every Stop
+    /// hook entry whose command references `mate-notify.js`, removes any group
+    /// left with no hooks, and preserves every other key, group and hook.
+    /// Returns `json` unchanged when there is no `mate-notify.js` hook.
+    static func settingsByRemovingHook(_ json: [String: Any]) -> [String: Any] {
+        guard var hooks = json["hooks"] as? [String: Any],
+              let stop = hooks["Stop"] as? [[String: Any]]
+        else { return json }
+
+        var changed = false
+        var newStop: [[String: Any]] = []
+        for var group in stop {
+            let entries = group["hooks"] as? [[String: Any]] ?? []
+            let kept = entries.filter { entry in
+                !((entry["command"] as? String)?.contains("mate-notify.js") ?? false)
+            }
+            if kept.count != entries.count { changed = true }
+            if kept.isEmpty { continue } // drop emptied group
+            group["hooks"] = kept
+            newStop.append(group)
+        }
+        guard changed else { return json }
+
+        var settings = json
+        hooks["Stop"] = newStop
+        settings["hooks"] = hooks
+        return settings
+    }
+
+    /// Copy the bundled script to `scriptDestURL` and register the Stop hook.
+    func install() throws {
+        let fm = FileManager.default
+        guard let bundled = Bundle.module.url(forResource: "mate-notify", withExtension: "js") else {
+            throw InstallError.bundledScriptMissing
+        }
+
+        let dest = Self.scriptDestURL
+        try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if fm.fileExists(atPath: dest.path) {
+            try fm.removeItem(at: dest)
+        }
+        try fm.copyItem(at: bundled, to: dest)
+
+        let settingsURL = Self.settingsURL
+        let current: [String: Any]
+        if let data = try? Data(contentsOf: settingsURL),
+           !data.isEmpty,
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            current = object
+        } else {
+            current = [:]
+        }
+
+        let updated = Self.settingsByAddingHook(current, command: Self.hookCommand(scriptPath: dest.path))
+        try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var data = try JSONSerialization.data(
+            withJSONObject: updated,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        data.append(0x0A) // trailing newline
+        try data.write(to: settingsURL)
+    }
+
+    /// Remove the Stop hook from settings.json and delete the App Support copy
+    /// of the script. No-op sections are tolerated (missing file / no hook).
+    func uninstall() throws {
+        let fm = FileManager.default
+        let settingsURL = Self.settingsURL
+
+        // Remove the hook first. If settings.json exists but is non-empty and
+        // unparseable, abort WITHOUT deleting the script — otherwise we'd leave
+        // a dangling `node <missing path>` Stop hook that errors on every Stop.
+        if let data = try? Data(contentsOf: settingsURL), !data.isEmpty {
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw InstallError.settingsUnreadable
+            }
+            let updated = Self.settingsByRemovingHook(object)
+            var out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
+            out.append(0x0A)
+            try out.write(to: settingsURL)
+        }
+
+        let dest = Self.scriptDestURL
+        if fm.fileExists(atPath: dest.path) {
+            try fm.removeItem(at: dest)
+        }
+    }
+}
