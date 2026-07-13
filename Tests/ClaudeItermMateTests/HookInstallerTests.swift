@@ -40,4 +40,20 @@ final class HookInstallerTests: XCTestCase {
         let result = HookInstaller.settingsByAddingHook(existing, command: command)
         XCTAssertEqual(stopCommands(result), ["node /elsewhere/mate-notify.js"])
     }
+
+    func testHookCommandQuotesPathWithSpaces() {
+        let path = "/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js"
+        XCTAssertEqual(HookInstaller.hookCommand(scriptPath: path), "node \"\(path)\"")
+    }
+
+    func testIdempotentWhenAlreadyPresentAsQuotedCommand() {
+        let quoted = "node \"/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js\""
+        let existing: [String: Any] = [
+            "hooks": ["Stop": [["matcher": "", "hooks": [
+                ["type": "command", "command": quoted],
+            ]]]],
+        ]
+        let result = HookInstaller.settingsByAddingHook(existing, command: command)
+        XCTAssertEqual(stopCommands(result), [quoted])
+    }
 }

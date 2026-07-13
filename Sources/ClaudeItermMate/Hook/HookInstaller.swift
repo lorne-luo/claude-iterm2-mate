@@ -23,6 +23,14 @@ struct HookInstaller {
     /// otherwise appends a new group with `command`, creating the `hooks` /
     /// `Stop` containers when absent and preserving every other key, group and
     /// hook.
+    /// The Stop hook command line. The script path is quoted because the App
+    /// Support path contains a space ("Application Support"); an unquoted path
+    /// makes `node` treat the first segment as the module and fail with
+    /// MODULE_NOT_FOUND.
+    static func hookCommand(scriptPath: String) -> String {
+        "node \"\(scriptPath)\""
+    }
+
     static func settingsByAddingHook(_ json: [String: Any], command: String) -> [String: Any] {
         var settings = json
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
@@ -31,8 +39,7 @@ struct HookInstaller {
         for group in stop {
             for entry in group["hooks"] as? [[String: Any]] ?? [] {
                 if let existing = entry["command"] as? String,
-                   existing.split(whereSeparator: { $0.isWhitespace })
-                       .contains(where: { $0.hasSuffix("mate-notify.js") }) {
+                   existing.contains("mate-notify.js") {
                     return json
                 }
             }
@@ -71,7 +78,7 @@ struct HookInstaller {
             current = [:]
         }
 
-        let updated = Self.settingsByAddingHook(current, command: "node \(dest.path)")
+        let updated = Self.settingsByAddingHook(current, command: Self.hookCommand(scriptPath: dest.path))
         try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         var data = try JSONSerialization.data(
             withJSONObject: updated,
