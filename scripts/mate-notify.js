@@ -66,10 +66,16 @@ function gitInfo(cwd) {
     } catch {}
     return undefined;
   };
-  return {
-    repo_root: run(["rev-parse", "--show-toplevel"]),
-    branch: run(["symbolic-ref", "--short", "HEAD"]),
-  };
+  const branch = run(["symbolic-ref", "--short", "HEAD"]);
+  const commonDir = run(["rev-parse", "--git-common-dir"]);
+  if (!commonDir) return { branch }; // not a git repo (branch is undefined too)
+  // Shared project root = parent of the common .git dir. All linked worktrees
+  // of one repo resolve to the same value, so they share a base color and
+  // project label; the branch glyph tells them apart.
+  const repo_root = path.dirname(path.resolve(cwd, commonDir));
+  const toplevel = run(["rev-parse", "--show-toplevel"]);
+  const is_worktree = toplevel ? path.resolve(toplevel) !== repo_root : false;
+  return { repo_root, branch, is_worktree };
 }
 
 // AppleScript strings do not support backslash escapes: strip backslashes,
@@ -120,6 +126,7 @@ function main(raw) {
   };
   if (git.repo_root) fields.repo_root = git.repo_root;
   if (git.branch) fields.branch = git.branch;
+  if (git.is_worktree) fields.is_worktree = true;
   // Keep the ENCODED payload under the server's byte limit. Measuring the
   // stringified result accounts for JSON escaping and multi-byte UTF-8, which
   // a plain character-count cap (MAX_STDIN) does not. Trim full_message until
