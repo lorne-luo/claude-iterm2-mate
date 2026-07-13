@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 protocol ToastPanelProtocol: AnyObject {
-    func show(item: ReminderItem, on visible: CGRect)
+    func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void)
     func hide()
 }
 
@@ -11,14 +11,25 @@ protocol ToastPanelProtocol: AnyObject {
 final class ToastPanel: ToastPanelProtocol {
     private var panel: NSPanel?
 
-    func show(item: ReminderItem, on visible: CGRect) {
+    func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void) {
         hide()
         let frame = EdgeGeometry.toastFrame(visible: visible)
-        let panel = PanelFactory.makePanel(frame: frame, canBecomeKey: false)
-        panel.contentViewController = NSHostingController(rootView: ToastView(item: item))
+        // canBecomeKey so the SwiftUI tap gesture receives the click.
+        let panel = PanelFactory.makePanel(frame: frame, canBecomeKey: true)
+        panel.contentView = FirstMouseHostingView(rootView: ToastView(item: item, onTap: { [weak self] in
+            self?.dismiss()
+            onClick()
+        }))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
         self.panel = panel
+    }
+
+    /// Immediate close (no fly-in) — used when the toast is clicked, since we're
+    /// jumping to the pane rather than queuing a tab.
+    private func dismiss() {
+        panel?.orderOut(nil)
+        panel = nil
     }
 
     /// Fly-into-the-tab-strip dismissal: shrink toward the right screen edge
@@ -46,6 +57,7 @@ final class ToastPanel: ToastPanelProtocol {
 
 struct ToastView: View {
     let item: ReminderItem
+    var onTap: () -> Void = {}
 
     /// Character budget for the toast title at 360pt / 13pt semibold.
     static let titleBudget = 42
@@ -90,5 +102,7 @@ struct ToastView: View {
         .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
         .padding(8) // inset within the panel so the shadow is not clipped
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
     }
 }

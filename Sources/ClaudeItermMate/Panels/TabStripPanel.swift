@@ -43,7 +43,7 @@ final class TabStripPanel {
         let panel = self.panel ?? Self.makeStripPanel()
         self.panel = panel
         panel.setFrame(frame, display: true)
-        panel.contentViewController = NSHostingController(rootView: TabStripView(
+        panel.contentView = FirstMouseHostingView(rootView: TabStripView(
             items: queued,
             onClick: onClick,
             onHover: { [weak self] item, index in

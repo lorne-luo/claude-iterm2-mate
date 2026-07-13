@@ -6,7 +6,11 @@ final class ReminderCoordinatorTests: XCTestCase {
     final class SpyToast: ToastPanelProtocol {
         var shown: [String] = []
         var hidden = 0
-        func show(item: ReminderItem, on visible: CGRect) { shown.append(item.sessionUUID) }
+        var lastOnClick: (() -> Void)?
+        func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void) {
+            shown.append(item.sessionUUID)
+            lastOnClick = onClick
+        }
         func hide() { hidden += 1 }
     }
 
@@ -27,6 +31,17 @@ final class ReminderCoordinatorTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertEqual(store.queued.map(\.sessionUUID), ["S1"])
         XCTAssertEqual(toast.hidden, 1)
+    }
+
+    func testToastClickInvokesOnActivate() async throws {
+        let store = ReminderStore()
+        let toast = SpyToast()
+        let coordinator = ReminderCoordinator(store: store, toastDuration: 10, toastPanel: toast)
+        var activated: [String] = []
+        coordinator.onActivate = { activated.append($0.sessionUUID) }
+        coordinator.handle(payload(session: "S1"))
+        toast.lastOnClick?()
+        XCTAssertEqual(activated, ["S1"])
     }
 
     func testOlderSessionTimerDoesNotHideNewerToast() async throws {

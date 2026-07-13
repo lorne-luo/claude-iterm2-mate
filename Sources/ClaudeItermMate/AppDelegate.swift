@@ -12,17 +12,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel())
+        coordinator.onActivate = { [weak self] item in self?.activate(item) }
         menuBar = MenuBarController(
             store: store,
             focusAvailable: focusAction.canFocus
         )
         tabStrip = TabStripPanel(
             store: store,
-            onClick: { [weak self] item in
-                guard let self else { return }
-                self.focusAction.focus(sessionUUID: item.sessionUUID, maximize: ItermFocusAction.maximizeOnClick)
-                self.store.remove(sessionUUID: item.sessionUUID)
-            },
+            onClick: { [weak self] item in self?.activate(item) },
             onHover: { [weak self] item, tabFrame in
                 self?.detail.hoverChanged(item: item, tabFrame: tabFrame)
             }
@@ -39,6 +36,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("NotifyServer failed to start: \(error)")
             menuBar?.showServerError("\(error)")
         }
+    }
+
+    /// Jump to the pane owning a reminder and consume it. Shared by tab clicks
+    /// and toast clicks.
+    private func activate(_ item: ReminderItem) {
+        focusAction.focus(sessionUUID: item.sessionUUID, maximize: ItermFocusAction.maximizeOnClick)
+        store.remove(sessionUUID: item.sessionUUID)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

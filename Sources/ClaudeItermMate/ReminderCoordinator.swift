@@ -10,6 +10,10 @@ final class ReminderCoordinator {
     private let toastDuration: TimeInterval
     private let toastPanel: ToastPanelProtocol?
 
+    /// Invoked when a toast is clicked — jump to the pane and consume the
+    /// reminder (same as clicking its tab). Injected by AppDelegate.
+    var onActivate: ((ReminderItem) -> Void)?
+
     /// Token of the toast currently shown in the single shared panel. Only the
     /// timer that owns the visible toast may hide it, so an older session's
     /// timer can never dismiss a newer session's toast early.
@@ -28,7 +32,10 @@ final class ReminderCoordinator {
     func handle(_ p: NotifyPayload) {
         let token = store.upsert(p)
         if let item = store.items.first(where: { $0.sessionUUID == p.sessionUUID }) {
-            toastPanel?.show(item: item, on: visibleFrame)
+            toastPanel?.show(item: item, on: visibleFrame, onClick: { [weak self] in
+                self?.displayedToken = nil
+                self?.onActivate?(item)
+            })
             displayedToken = token
         }
         let session = p.sessionUUID

@@ -1,4 +1,13 @@
 import AppKit
+import SwiftUI
+
+/// An `NSHostingView` that delivers the first click to its SwiftUI content even
+/// when its window is not key. Without this, a nonactivating panel eats the
+/// first click just to become key, so the content only reacts on the second
+/// click (the "double-click to act" bug).
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
 
 /// Borderless non-activating floating panel — the keymic-pro recipe.
 /// `canBecomeKey: true` panels take key status without activating the app,
