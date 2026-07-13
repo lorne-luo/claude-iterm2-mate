@@ -13,6 +13,8 @@ struct NotifyPayload: Codable, Equatable {
     // and for payloads produced before this feature. Backward compatible.
     let repoRoot: String?
     let branch: String?
+    // True when the session runs in a linked git worktree; absent -> false.
+    let isWorktree: Bool
 
     enum CodingKeys: String, CodingKey {
         case sessionUUID = "session_uuid"
@@ -21,6 +23,20 @@ struct NotifyPayload: Codable, Equatable {
         case timestamp
         case repoRoot = "repo_root"
         case branch
+        case isWorktree = "is_worktree"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sessionUUID = try c.decode(String.self, forKey: .sessionUUID)
+        cwd = try c.decode(String.self, forKey: .cwd)
+        title = try c.decode(String.self, forKey: .title)
+        summary = try c.decode(String.self, forKey: .summary)
+        fullMessage = try c.decode(String.self, forKey: .fullMessage)
+        timestamp = try c.decode(Double.self, forKey: .timestamp)
+        repoRoot = try c.decodeIfPresent(String.self, forKey: .repoRoot)
+        branch = try c.decodeIfPresent(String.self, forKey: .branch)
+        isWorktree = try c.decodeIfPresent(Bool.self, forKey: .isWorktree) ?? false
     }
 
     var projectName: String { (cwd as NSString).lastPathComponent }

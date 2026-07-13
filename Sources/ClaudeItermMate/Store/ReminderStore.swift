@@ -11,6 +11,7 @@ struct ReminderItem: Identifiable, Equatable {
     var cwd: String
     var repoRoot: String?
     var branch: String?
+    var isWorktree: Bool
     var summary: String
     var fullMessage: String
     var timestamp: Double
@@ -38,6 +39,7 @@ final class ReminderStore {
             cwd: p.cwd,
             repoRoot: p.repoRoot,
             branch: p.branch,
+            isWorktree: p.isWorktree,
             summary: p.summary,
             fullMessage: p.fullMessage,
             timestamp: p.timestamp,

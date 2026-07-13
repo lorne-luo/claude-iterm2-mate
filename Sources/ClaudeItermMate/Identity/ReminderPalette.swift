@@ -24,16 +24,39 @@ enum ReminderPalette {
 
     static let colors: [Color] = rgb.map { Color(.sRGB, red: $0.r, green: $0.g, blue: $0.b) }
 
-    static func color(at index: Int) -> Color {
-        colors[wrap(index)]
+    /// Glyph flips to black once the background luminance rises above this.
+    static let glyphLuminanceThreshold = 0.6
+
+    /// Fraction blended toward white for a linked-worktree tab — raises
+    /// lightness and lowers saturation so it reads as a lighter tint of the
+    /// same hue while staying clearly the same project.
+    private static let worktreeLightenFactor = 0.4
+
+    /// Effective sRGB components for a tab: the base palette color, or a
+    /// lightened/desaturated tint for a linked worktree.
+    static func components(at index: Int, worktree: Bool = false) -> (r: Double, g: Double, b: Double) {
+        let base = rgb[wrap(index)]
+        guard worktree else { return base }
+        let t = worktreeLightenFactor
+        return (
+            base.r + (1 - base.r) * t,
+            base.g + (1 - base.g) * t,
+            base.b + (1 - base.b) * t
+        )
+    }
+
+    static func color(at index: Int, worktree: Bool = false) -> Color {
+        let c = components(at: index, worktree: worktree)
+        return Color(.sRGB, red: c.r, green: c.g, blue: c.b)
     }
 
     /// Black on light backgrounds, white on dark ones (WCAG relative-luminance
-    /// heuristic on the raw sRGB components).
-    static func glyphForeground(at index: Int) -> Color {
-        let c = rgb[wrap(index)]
+    /// heuristic), computed against the ACTUAL rendered variant color so the
+    /// base and lightened tints each get a legible glyph.
+    static func glyphForeground(at index: Int, worktree: Bool = false) -> Color {
+        let c = components(at: index, worktree: worktree)
         let luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
-        return luminance > 0.6 ? .black : .white
+        return luminance > glyphLuminanceThreshold ? .black : .white
     }
 
     private static func wrap(_ index: Int) -> Int {
