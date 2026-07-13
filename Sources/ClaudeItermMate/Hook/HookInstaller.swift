@@ -5,6 +5,7 @@ import Foundation
 struct HookInstaller {
     enum InstallError: Error {
         case bundledScriptMissing
+        case settingsUnreadable
     }
 
     /// Stable install location for the script (alongside the notify socket).
@@ -122,9 +123,14 @@ struct HookInstaller {
     func uninstall() throws {
         let fm = FileManager.default
         let settingsURL = Self.settingsURL
-        if let data = try? Data(contentsOf: settingsURL),
-           !data.isEmpty,
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+
+        // Remove the hook first. If settings.json exists but is non-empty and
+        // unparseable, abort WITHOUT deleting the script — otherwise we'd leave
+        // a dangling `node <missing path>` Stop hook that errors on every Stop.
+        if let data = try? Data(contentsOf: settingsURL), !data.isEmpty {
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw InstallError.settingsUnreadable
+            }
             let updated = Self.settingsByRemovingHook(object)
             var out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
             out.append(0x0A)

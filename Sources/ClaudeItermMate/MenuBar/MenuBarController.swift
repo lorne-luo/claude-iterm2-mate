@@ -141,12 +141,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         alert.messageText = "Remove the Claude iTerm2 Mate hook?"
         alert.informativeText = "Claude Code will stop sending reminders to this app. You can re-add it any time with Install me."
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Remove")
-        let cancel = alert.addButton(withTitle: "Cancel")
-        cancel.keyEquivalent = "\u{1b}" // Esc; Cancel is the safe default
+        // Cancel is added first so it is the default (Return) button — an
+        // accidental Return must not remove the hook. Remove is second and
+        // does not respond to Return.
+        alert.addButton(withTitle: "Cancel")
+        let remove = alert.addButton(withTitle: "Remove")
+        remove.keyEquivalent = ""
         // .accessory apps must activate to bring a modal alert to the front.
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
         do {
             try HookInstaller().uninstall()
             notify("Hook removed. Reminders are now off.")
