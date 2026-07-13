@@ -8,7 +8,7 @@ final class DetailPanel {
     private var hideWork: DispatchWorkItem?
     private var mouseInsideDetail = false
 
-    static let showDelay: TimeInterval = 0.3
+    static let showDelay: TimeInterval = 0.5
     static let hideGrace: TimeInterval = 0.2
     static let size = CGSize(width: 420, height: 520)
 
@@ -70,32 +70,45 @@ struct DetailView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(item.projectName)
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                Text(Self.relativeTime(item.timestamp))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+        let accent = ReminderPalette.color(at: item.identity.colorIndex, worktree: item.isWorktree)
+        VStack(spacing: 0) {
+            // Header: neutral text on a very light wash of the project color.
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(item.projectName)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Text(Self.relativeTime(item.timestamp))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                if let branch = item.branch, !branch.isEmpty {
+                    Text("⎇ \(branch)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
             }
-            if let branch = item.branch, !branch.isEmpty {
-                Text("⎇ \(branch)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(accent.opacity(0.15))
+
             Divider()
+
             ScrollView {
                 Text(item.fullMessage)
                     .font(.system(size: 12))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
             }
         }
-        .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator, lineWidth: 1))
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15).strokeBorder(.white.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+        .padding(10) // inset within the panel so the shadow is not clipped
         .onHover(perform: onHoverChanged)
     }
 }

@@ -65,17 +65,28 @@ struct ToastView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(Self.title(project: item.projectName, branch: item.branch))
-                .font(.system(size: 13, weight: .semibold))
-            Text(item.summary)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
+        let identity = item.identity
+        HStack(spacing: 10) {
+            // Project-color bar ties the toast to its right-edge tab.
+            RoundedRectangle(cornerRadius: 2)
+                .fill(ReminderPalette.color(at: identity.colorIndex, worktree: item.isWorktree))
+                .frame(width: 4)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(Self.title(project: item.projectName, branch: item.branch))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                Text(item.summary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 1))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13))
+        .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
+        .padding(8) // inset within the panel so the shadow is not clipped
     }
 }

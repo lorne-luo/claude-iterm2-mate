@@ -86,17 +86,34 @@ struct TabStripView: View {
 // Named EdgeTabView to avoid shadowing SwiftUI.TabView.
 private struct EdgeTabView: View {
     let item: ReminderItem
+    @State private var hovering = false
+
+    private var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 11, bottomLeadingRadius: 11,
+            bottomTrailingRadius: 0, topTrailingRadius: 0
+        )
+    }
 
     var body: some View {
         let identity = item.identity
+        let base = ReminderPalette.color(at: identity.colorIndex, worktree: item.isWorktree)
         Text(identity.worktreeGlyph)
-            .font(.system(size: 13, weight: .bold))
+            .font(.system(size: 14, weight: .bold, design: .rounded))
             .foregroundStyle(ReminderPalette.glyphForeground(at: identity.colorIndex, worktree: item.isWorktree))
             .frame(width: EdgeGeometry.tabWidth, height: EdgeGeometry.tabHeight)
-            .background(ReminderPalette.color(at: identity.colorIndex, worktree: item.isWorktree), in: UnevenRoundedRectangle(
-                topLeadingRadius: 10, bottomLeadingRadius: 10,
-                bottomTrailingRadius: 0, topTrailingRadius: 0
-            ))
+            .background {
+                // Subtle top-to-bottom sheen over the project color for depth.
+                LinearGradient(
+                    colors: [base.opacity(0.92), base],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .overlay(Color.white.opacity(hovering ? 0.18 : 0)) // instant hover feedback
+            }
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(.white.opacity(hovering ? 0.5 : 0.12), lineWidth: 1))
             .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .animation(.easeInOut(duration: 0.15), value: hovering)
     }
 }
