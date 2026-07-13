@@ -48,8 +48,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
     }
 
-    private func dot(_ color: NSColor) -> NSImage? {
-        let image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)
+    /// A menu-item icon. With no color the symbol renders as a template in the
+    /// standard menu text color; with a color it is palette-tinted (used for
+    /// the status light and warnings).
+    private func symbol(_ name: String, color: NSColor? = nil) -> NSImage? {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        guard let color else { return image }
         return image?.withSymbolConfiguration(.init(paletteColors: [color]))
     }
 
@@ -61,6 +65,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if let serverError {
             let item = NSMenuItem(title: "Not receiving: \(serverError)", action: nil, keyEquivalent: "")
             item.isEnabled = false
+            item.image = symbol("exclamationmark.triangle.fill", color: .systemOrange)
             menu.addItem(item)
             menu.addItem(.separator())
         }
@@ -70,20 +75,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 action: nil, keyEquivalent: ""
             )
             warn.isEnabled = false
+            warn.image = symbol("exclamationmark.triangle", color: .systemYellow)
             menu.addItem(warn)
             menu.addItem(.separator())
         }
 
         // Hook status light.
         if installed {
-            let active = NSMenuItem(title: "Hook active", action: nil, keyEquivalent: "")
-            active.isEnabled = false
-            active.image = dot(.systemGreen)
+            let active = NSMenuItem(title: "Remove me", action: #selector(confirmRemoveHook), keyEquivalent: "")
+            active.target = self
+            active.image = symbol("checkmark.circle.fill", color: .systemGreen)
             menu.addItem(active)
         } else {
             let install = NSMenuItem(title: "Install me", action: #selector(installHook), keyEquivalent: "")
             install.target = self
-            install.image = dot(.systemRed)
+            install.image = symbol("arrow.down.circle.fill", color: .systemRed)
             menu.addItem(install)
         }
         menu.addItem(.separator())
@@ -92,23 +98,29 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         pause.target = self
         pause.state = coordinator.isPaused ? .on : .off
         pause.isEnabled = installed
+        pause.image = symbol("pause.circle")
         menu.addItem(pause)
         let clear = NSMenuItem(title: "Clear All Tabs", action: #selector(clearAll), keyEquivalent: "")
         clear.target = self
         clear.isEnabled = installed
+        clear.image = symbol("trash")
         menu.addItem(clear)
         let maximize = NSMenuItem(title: "Maximize Pane on Click", action: #selector(toggleMaximize(_:)), keyEquivalent: "")
         maximize.target = self
         maximize.state = ItermFocusAction.maximizeOnClick ? .on : .off
         maximize.isEnabled = installed
+        maximize.image = symbol("arrow.up.left.and.arrow.down.right")
         menu.addItem(maximize)
         let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLogin(_:)), keyEquivalent: "")
         login.target = self
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         login.isEnabled = installed
+        login.image = symbol("power")
         menu.addItem(login)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.image = symbol("xmark.circle")
+        menu.addItem(quit)
     }
 
     @objc private func installHook() {
@@ -118,6 +130,27 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         } catch {
             NSLog("Hook install failed: \(error)")
             notify("Hook install failed: \(error.localizedDescription)")
+        }
+        populate(menu)
+    }
+
+    @objc private func confirmRemoveHook() {
+        let alert = NSAlert()
+        alert.messageText = "Remove the Claude iTerm2 Mate hook?"
+        alert.informativeText = "Claude Code will stop sending reminders to this app. You can re-add it any time with Install me."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Remove")
+        let cancel = alert.addButton(withTitle: "Cancel")
+        cancel.keyEquivalent = "\u{1b}" // Esc; Cancel is the safe default
+        // .accessory apps must activate to bring a modal alert to the front.
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try HookInstaller().uninstall()
+            notify("Hook removed. Reminders are now off.")
+        } catch {
+            NSLog("Hook uninstall failed: \(error)")
+            notify("Hook removal failed: \(error.localizedDescription)")
         }
         populate(menu)
     }

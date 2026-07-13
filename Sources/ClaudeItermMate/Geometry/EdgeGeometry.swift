@@ -7,7 +7,7 @@ enum EdgeGeometry {
     static let tabHeight: CGFloat = 64
     static let tabSpacing: CGFloat = 8
     static let screenMargin: CGFloat = 12
-    static let toastSize = CGSize(width: 360, height: 88)
+    static let toastSize = CGSize(width: 440, height: 156)
 
     static func maxVisibleTabs(visible: CGRect) -> Int {
         let usable = visible.height - 2 * screenMargin

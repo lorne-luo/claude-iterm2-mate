@@ -39,6 +39,13 @@ final class ReminderIdentityTests: XCTestCase {
         XCTAssertEqual(ReminderIdentity(repoRoot: nil, branch: "", cwd: "/x").worktreeGlyph, "●")
     }
 
+    func testIsMainLine() {
+        XCTAssertTrue(ReminderIdentity(repoRoot: nil, branch: "main", cwd: "/x").isMainLine)
+        XCTAssertTrue(ReminderIdentity(repoRoot: nil, branch: "master", cwd: "/x").isMainLine)
+        XCTAssertTrue(ReminderIdentity(repoRoot: nil, branch: nil, cwd: "/x").isMainLine)
+        XCTAssertFalse(ReminderIdentity(repoRoot: nil, branch: "feature/auth", cwd: "/x").isMainLine)
+    }
+
     // MARK: colorIndex
 
     func testColorIndexIsStableAcrossInstances() {

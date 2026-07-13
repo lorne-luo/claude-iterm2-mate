@@ -56,4 +56,43 @@ final class HookInstallerTests: XCTestCase {
         let result = HookInstaller.settingsByAddingHook(existing, command: command)
         XCTAssertEqual(stopCommands(result), [quoted])
     }
+
+    // MARK: removal
+
+    func testRemovesHookAndPreservesUnrelatedInSameGroup() {
+        let afplay = "afplay /System/Library/Sounds/Glass.aiff"
+        let existing: [String: Any] = [
+            "hooks": ["Stop": [["matcher": "", "hooks": [
+                ["type": "command", "command": afplay],
+                ["type": "command", "command": command],
+            ]]]],
+            "otherKey": "kept",
+        ]
+        let result = HookInstaller.settingsByRemovingHook(existing)
+        XCTAssertEqual(stopCommands(result), [afplay])
+        XCTAssertEqual(result["otherKey"] as? String, "kept")
+    }
+
+    func testRemovalDropsEmptiedGroupButKeepsOthers() {
+        let afplay = "afplay /x.aiff"
+        let existing: [String: Any] = [
+            "hooks": ["Stop": [
+                ["matcher": "", "hooks": [["type": "command", "command": command]]],
+                ["matcher": "", "hooks": [["type": "command", "command": afplay]]],
+            ]],
+        ]
+        let result = HookInstaller.settingsByRemovingHook(existing)
+        XCTAssertEqual(stopCommands(result), [afplay])
+        let stop = (result["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]]
+        XCTAssertEqual(stop?.count, 1, "the emptied group should be dropped")
+    }
+
+    func testRemovalNoOpWhenAbsent() {
+        let afplay = "afplay /x.aiff"
+        let existing: [String: Any] = [
+            "hooks": ["Stop": [["matcher": "", "hooks": [["type": "command", "command": afplay]]]]],
+        ]
+        let result = HookInstaller.settingsByRemovingHook(existing)
+        XCTAssertEqual(stopCommands(result), [afplay])
+    }
 }

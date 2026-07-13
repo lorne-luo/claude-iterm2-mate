@@ -66,23 +66,25 @@ struct ToastView: View {
 
     var body: some View {
         let identity = item.identity
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             // Project-color bar ties the toast to its right-edge tab.
             RoundedRectangle(cornerRadius: 2)
                 .fill(ReminderPalette.color(at: identity.colorIndex, worktree: item.isWorktree))
                 .frame(width: 4)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(Self.title(project: item.projectName, branch: item.branch))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(1)
-                Text(item.summary)
+                Text(item.fullMessage)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .foregroundStyle(.primary)
+                    .lineLimit(6)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(0.12), lineWidth: 1))

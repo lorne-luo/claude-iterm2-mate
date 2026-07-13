@@ -98,8 +98,7 @@ private struct EdgeTabView: View {
     var body: some View {
         let identity = item.identity
         let base = ReminderPalette.color(at: identity.colorIndex, worktree: item.isWorktree)
-        Text(identity.worktreeGlyph)
-            .font(.system(size: 14, weight: .bold, design: .rounded))
+        glyph(identity)
             .foregroundStyle(ReminderPalette.glyphForeground(at: identity.colorIndex, worktree: item.isWorktree))
             .frame(width: EdgeGeometry.tabWidth, height: EdgeGeometry.tabHeight)
             .background {
@@ -115,5 +114,17 @@ private struct EdgeTabView: View {
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .animation(.easeInOut(duration: 0.15), value: hovering)
+    }
+
+    /// The main working tree shows a "home" icon; named worktrees show the
+    /// branch's initial letter.
+    @ViewBuilder private func glyph(_ identity: ReminderIdentity) -> some View {
+        if identity.isMainLine {
+            Image(systemName: "house.fill")
+                .font(.system(size: 13, weight: .semibold))
+        } else {
+            Text(identity.worktreeGlyph)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+        }
     }
 }

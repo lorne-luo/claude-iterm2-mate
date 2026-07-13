@@ -54,6 +54,35 @@ struct HookInstaller {
         return settings
     }
 
+    /// Pure, unit-tested inverse of `settingsByAddingHook`. Drops every Stop
+    /// hook entry whose command references `mate-notify.js`, removes any group
+    /// left with no hooks, and preserves every other key, group and hook.
+    /// Returns `json` unchanged when there is no `mate-notify.js` hook.
+    static func settingsByRemovingHook(_ json: [String: Any]) -> [String: Any] {
+        guard var hooks = json["hooks"] as? [String: Any],
+              let stop = hooks["Stop"] as? [[String: Any]]
+        else { return json }
+
+        var changed = false
+        var newStop: [[String: Any]] = []
+        for var group in stop {
+            let entries = group["hooks"] as? [[String: Any]] ?? []
+            let kept = entries.filter { entry in
+                !((entry["command"] as? String)?.contains("mate-notify.js") ?? false)
+            }
+            if kept.count != entries.count { changed = true }
+            if kept.isEmpty { continue } // drop emptied group
+            group["hooks"] = kept
+            newStop.append(group)
+        }
+        guard changed else { return json }
+
+        var settings = json
+        hooks["Stop"] = newStop
+        settings["hooks"] = hooks
+        return settings
+    }
+
     /// Copy the bundled script to `scriptDestURL` and register the Stop hook.
     func install() throws {
         let fm = FileManager.default
@@ -86,5 +115,25 @@ struct HookInstaller {
         )
         data.append(0x0A) // trailing newline
         try data.write(to: settingsURL)
+    }
+
+    /// Remove the Stop hook from settings.json and delete the App Support copy
+    /// of the script. No-op sections are tolerated (missing file / no hook).
+    func uninstall() throws {
+        let fm = FileManager.default
+        let settingsURL = Self.settingsURL
+        if let data = try? Data(contentsOf: settingsURL),
+           !data.isEmpty,
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let updated = Self.settingsByRemovingHook(object)
+            var out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
+            out.append(0x0A)
+            try out.write(to: settingsURL)
+        }
+
+        let dest = Self.scriptDestURL
+        if fm.fileExists(atPath: dest.path) {
+            try fm.removeItem(at: dest)
+        }
     }
 }

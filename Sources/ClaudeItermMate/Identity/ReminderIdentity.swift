@@ -13,6 +13,10 @@ struct ReminderIdentity: Equatable {
     let worktreeGlyph: String
     let colorIndex: Int
 
+    /// True for the main working tree (branch main/master, or no branch). The
+    /// tab renders these with a "home" icon instead of a letter glyph.
+    var isMainLine: Bool { worktreeGlyph == Self.defaultGlyph }
+
     init(repoRoot: String?, branch: String?, cwd: String) {
         let base = ReminderIdentity.nonEmpty(repoRoot) ?? cwd
         project = (base as NSString).lastPathComponent

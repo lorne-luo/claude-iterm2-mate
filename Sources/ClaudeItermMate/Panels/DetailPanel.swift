@@ -101,7 +101,7 @@ struct DetailView: View {
                         .foregroundStyle(.secondary)
                 }
                 if let branch = item.branch, !branch.isEmpty {
-                    Text("⎇ \(branch)")
+                    Label(branch, systemImage: "arrow.triangle.branch")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
