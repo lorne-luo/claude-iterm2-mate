@@ -4,15 +4,13 @@ import ServiceManagement
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let store: ReminderStore
-    private let coordinator: ReminderCoordinator
     private let focusAvailable: Bool
     private var statusItem: NSStatusItem!
     private var serverError: String?
     private let menu = NSMenu()
 
-    init(store: ReminderStore, coordinator: ReminderCoordinator, focusAvailable: Bool) {
+    init(store: ReminderStore, focusAvailable: Bool) {
         self.store = store
-        self.coordinator = coordinator
         self.focusAvailable = focusAvailable
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -80,26 +78,30 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        // Hook status light.
+        // Hook status: a traffic-light status line whose submenu holds the
+        // action, so the light (state) and the verb (action) never conflict.
+        let status = NSMenuItem(
+            title: installed ? "Hook installed" : "Hook not installed",
+            action: nil, keyEquivalent: ""
+        )
+        status.image = symbol("circle.fill", color: installed ? .systemGreen : .systemRed)
+        status.isEnabled = true // required (autoenablesItems=false) so the submenu opens
+        let sub = NSMenu()
+        let action: NSMenuItem
         if installed {
-            let active = NSMenuItem(title: "Remove me", action: #selector(confirmRemoveHook), keyEquivalent: "")
-            active.target = self
-            active.image = symbol("checkmark.circle.fill", color: .systemGreen)
-            menu.addItem(active)
+            action = NSMenuItem(title: "Remove Hook…", action: #selector(confirmRemoveHook), keyEquivalent: "")
+            action.image = symbol("trash")
         } else {
-            let install = NSMenuItem(title: "Install me", action: #selector(installHook), keyEquivalent: "")
-            install.target = self
-            install.image = symbol("arrow.down.circle.fill", color: .systemRed)
-            menu.addItem(install)
+            action = NSMenuItem(title: "Install Hook", action: #selector(installHook), keyEquivalent: "")
+            action.image = symbol("arrow.down.circle")
         }
+        action.target = self
+        action.isEnabled = true
+        sub.addItem(action)
+        status.submenu = sub
+        menu.addItem(status)
         menu.addItem(.separator())
 
-        let pause = NSMenuItem(title: "Pause Reminders", action: #selector(togglePause(_:)), keyEquivalent: "")
-        pause.target = self
-        pause.state = coordinator.isPaused ? .on : .off
-        pause.isEnabled = installed
-        pause.image = symbol("pause.circle")
-        menu.addItem(pause)
         let clear = NSMenuItem(title: "Clear All Tabs", action: #selector(clearAll), keyEquivalent: "")
         clear.target = self
         clear.isEnabled = installed
@@ -163,11 +165,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", "display notification \"\(safe)\" with title \"Claude iTerm2 Mate\""]
         try? p.run()
-    }
-
-    @objc private func togglePause(_ sender: NSMenuItem) {
-        coordinator.isPaused.toggle()
-        sender.state = coordinator.isPaused ? .on : .off
     }
 
     @objc private func clearAll() {

@@ -29,16 +29,6 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertEqual(toast.hidden, 1)
     }
 
-    func testPausedDropsPayload() async throws {
-        let store = ReminderStore()
-        let toast = SpyToast()
-        let coordinator = ReminderCoordinator(store: store, toastDuration: 0.1, toastPanel: toast)
-        coordinator.isPaused = true
-        coordinator.handle(payload())
-        XCTAssertTrue(toast.shown.isEmpty)
-        XCTAssertTrue(store.items.isEmpty)
-    }
-
     func testOlderSessionTimerDoesNotHideNewerToast() async throws {
         let store = ReminderStore()
         let toast = SpyToast()

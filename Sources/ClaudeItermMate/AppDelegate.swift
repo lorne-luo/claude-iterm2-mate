@@ -14,7 +14,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel())
         menuBar = MenuBarController(
             store: store,
-            coordinator: coordinator,
             focusAvailable: focusAction.canFocus
         )
         tabStrip = TabStripPanel(

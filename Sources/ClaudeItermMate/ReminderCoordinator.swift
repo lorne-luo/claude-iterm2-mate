@@ -6,7 +6,6 @@ import Foundation
 @MainActor
 final class ReminderCoordinator {
     let store: ReminderStore
-    var isPaused = false
 
     private let toastDuration: TimeInterval
     private let toastPanel: ToastPanelProtocol?
@@ -27,7 +26,6 @@ final class ReminderCoordinator {
     }
 
     func handle(_ p: NotifyPayload) {
-        guard !isPaused else { return } // socket stays open; payload silently dropped
         let token = store.upsert(p)
         if let item = store.items.first(where: { $0.sessionUUID == p.sessionUUID }) {
             toastPanel?.show(item: item, on: visibleFrame)
