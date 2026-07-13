@@ -114,10 +114,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func installHook() {
         do {
             try HookInstaller().install()
+            notify("Hook installed — reminders are now active.")
         } catch {
             NSLog("Hook install failed: \(error)")
+            notify("Hook install failed: \(error.localizedDescription)")
         }
         populate(menu)
+    }
+
+    /// Confirm the install with a desktop notification — the menu closes on
+    /// click, so this is the only immediate feedback the user sees.
+    private func notify(_ message: String) {
+        let safe = message.replacingOccurrences(of: "\"", with: "'")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", "display notification \"\(safe)\" with title \"Claude iTerm2 Mate\""]
+        try? p.run()
     }
 
     @objc private func togglePause(_ sender: NSMenuItem) {

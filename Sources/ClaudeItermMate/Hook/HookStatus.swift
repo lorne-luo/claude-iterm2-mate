@@ -7,11 +7,12 @@ enum HookStatus: Equatable {
 
     /// Decide status from a parsed settings.json dict.
     ///
-    /// Scans every `Stop` hook group's `hooks[].command`, splits each command on
-    /// whitespace, and looks for a token ending in `mate-notify.js`. The hook is
-    /// `.installed` only when such a token exists AND `fileExists` reports the
-    /// referenced path present. `fileExists` is injected so this stays pure and
-    /// disk-free for tests.
+    /// Scans every `Stop` hook group's `hooks[].command` for one referencing
+    /// `mate-notify.js`, extracts the absolute script path (from the first `/`
+    /// through `mate-notify.js`, so paths containing spaces like
+    /// "Application Support" survive), and returns `.installed` only when
+    /// `fileExists` reports that path present. `fileExists` is injected so this
+    /// stays pure and disk-free for tests.
     static func evaluate(settings: [String: Any]?, fileExists: (String) -> Bool) -> HookStatus {
         guard
             let settings,
@@ -22,15 +23,26 @@ enum HookStatus: Equatable {
         for group in stop {
             guard let entries = group["hooks"] as? [[String: Any]] else { continue }
             for entry in entries {
-                guard let command = entry["command"] as? String else { continue }
-                for token in command.split(whereSeparator: { $0.isWhitespace }) {
-                    if token.hasSuffix("mate-notify.js"), fileExists(String(token)) {
-                        return .installed
-                    }
-                }
+                guard let command = entry["command"] as? String,
+                      let path = scriptPath(in: command),
+                      fileExists(path)
+                else { continue }
+                return .installed
             }
         }
         return .notInstalled
+    }
+
+    /// The absolute `mate-notify.js` path referenced by a hook command, or nil.
+    /// Takes the substring from the first `/` up to and including
+    /// `mate-notify.js`, which keeps spaces in the path intact and ignores the
+    /// `node ` prefix and any surrounding quotes.
+    static func scriptPath(in command: String) -> String? {
+        guard let scriptEnd = command.range(of: "mate-notify.js"),
+              let firstSlash = command.firstIndex(of: "/"),
+              firstSlash < scriptEnd.upperBound
+        else { return nil }
+        return String(command[firstSlash..<scriptEnd.upperBound])
     }
 
     /// Read `~/.claude/settings.json` and evaluate against the real filesystem.

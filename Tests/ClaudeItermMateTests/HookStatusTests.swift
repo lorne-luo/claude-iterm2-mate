@@ -16,6 +16,15 @@ final class HookStatusTests: XCTestCase {
         XCTAssertEqual(status, .installed)
     }
 
+    func testInstalledWhenPathContainsSpaces() {
+        // The real install path has a space ("Application Support"); fileExists
+        // must be checked against the FULL path, not a whitespace-split token.
+        let full = "/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js"
+        let s = settings(stopCommands: ["node \(full)"])
+        let status = HookStatus.evaluate(settings: s, fileExists: { $0 == full })
+        XCTAssertEqual(status, .installed)
+    }
+
     func testNotInstalledWhenReferencedButFileMissing() {
         let s = settings(stopCommands: ["node /somewhere/mate-notify.js"])
         let status = HookStatus.evaluate(settings: s, fileExists: { _ in false })
