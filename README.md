@@ -23,17 +23,13 @@ maximized).
 
 ## Hook installation
 
-Register the Stop hook in `~/.claude/settings.json`, REPLACING any
-desktop-notify.js entry (running both duplicates notifications):
-
-    "hooks": {
-      "Stop": [
-        { "matcher": "", "hooks": [
-          { "type": "command",
-            "command": "node /ABSOLUTE/PATH/claude-iterm2-mate/scripts/mate-notify.js" }
-        ]}
-      ]
-    }
+Open the menu-bar menu and click **Install me** (shown with a red dot when the
+hook is not yet registered). This copies the bundled `mate-notify.js` to
+`~/Library/Application Support/ClaudeItermMate/mate-notify.js` and appends a
+`Stop` hook pointing at it in `~/.claude/settings.json`. The install is
+append-only and idempotent — it never touches your other hooks (`afplay`,
+`desktop-notify.js`, etc.). Once installed the menu shows a green **Hook
+active** label.
 
 If the app is not running, the hook falls back to a normal macOS
 notification — behavior degrades gracefully to the status quo.

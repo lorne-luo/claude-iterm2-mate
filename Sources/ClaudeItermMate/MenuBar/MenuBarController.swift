@@ -2,12 +2,13 @@ import AppKit
 import ServiceManagement
 
 @MainActor
-final class MenuBarController: NSObject {
+final class MenuBarController: NSObject, NSMenuDelegate {
     private let store: ReminderStore
     private let coordinator: ReminderCoordinator
     private let focusAvailable: Bool
     private var statusItem: NSStatusItem!
     private var serverError: String?
+    private let menu = NSMenu()
 
     init(store: ReminderStore, coordinator: ReminderCoordinator, focusAvailable: Bool) {
         self.store = store
@@ -16,7 +17,12 @@ final class MenuBarController: NSObject {
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         refreshIcon()
-        statusItem.menu = buildMenu()
+        menu.delegate = self
+        // We drive enablement explicitly (disabled items when the hook is not
+        // installed); AppKit's auto-enabling would re-enable them by target.
+        menu.autoenablesItems = false
+        populate(menu)
+        statusItem.menu = menu
     }
 
     /// Surface a fatal server-start failure: swap the icon to a warning and
@@ -25,7 +31,13 @@ final class MenuBarController: NSObject {
     func showServerError(_ message: String) {
         serverError = message
         refreshIcon()
-        statusItem.menu = buildMenu()
+        populate(menu)
+    }
+
+    /// Rebuild the menu each time it opens so the hook light reflects live
+    /// settings.json state.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        populate(menu)
     }
 
     private func refreshIcon() {
@@ -36,8 +48,16 @@ final class MenuBarController: NSObject {
         )
     }
 
-    private func buildMenu() -> NSMenu {
-        let menu = NSMenu()
+    private func dot(_ color: NSColor) -> NSImage? {
+        let image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)
+        return image?.withSymbolConfiguration(.init(paletteColors: [color]))
+    }
+
+    private func populate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let hookStatus = HookStatus.current()
+        let installed = hookStatus == .installed
+
         if let serverError {
             let item = NSMenuItem(title: "Not receiving: \(serverError)", action: nil, keyEquivalent: "")
             item.isEnabled = false
@@ -53,23 +73,51 @@ final class MenuBarController: NSObject {
             menu.addItem(warn)
             menu.addItem(.separator())
         }
+
+        // Hook status light.
+        if installed {
+            let active = NSMenuItem(title: "Hook active", action: nil, keyEquivalent: "")
+            active.isEnabled = false
+            active.image = dot(.systemGreen)
+            menu.addItem(active)
+        } else {
+            let install = NSMenuItem(title: "Install me", action: #selector(installHook), keyEquivalent: "")
+            install.target = self
+            install.image = dot(.systemRed)
+            menu.addItem(install)
+        }
+        menu.addItem(.separator())
+
         let pause = NSMenuItem(title: "Pause Reminders", action: #selector(togglePause(_:)), keyEquivalent: "")
         pause.target = self
+        pause.state = coordinator.isPaused ? .on : .off
+        pause.isEnabled = installed
         menu.addItem(pause)
         let clear = NSMenuItem(title: "Clear All Tabs", action: #selector(clearAll), keyEquivalent: "")
         clear.target = self
+        clear.isEnabled = installed
         menu.addItem(clear)
         let maximize = NSMenuItem(title: "Maximize Pane on Click", action: #selector(toggleMaximize(_:)), keyEquivalent: "")
         maximize.target = self
         maximize.state = ItermFocusAction.maximizeOnClick ? .on : .off
+        maximize.isEnabled = installed
         menu.addItem(maximize)
         let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLogin(_:)), keyEquivalent: "")
         login.target = self
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        login.isEnabled = installed
         menu.addItem(login)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        return menu
+    }
+
+    @objc private func installHook() {
+        do {
+            try HookInstaller().install()
+        } catch {
+            NSLog("Hook install failed: \(error)")
+        }
+        populate(menu)
     }
 
     @objc private func togglePause(_ sender: NSMenuItem) {

@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ClaudeItermMate",
-            path: "Sources/ClaudeItermMate"
+            path: "Sources/ClaudeItermMate",
+            resources: [.copy("Resources/mate-notify.js")]
         ),
         .testTarget(
             name: "ClaudeItermMateTests",
