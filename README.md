@@ -3,9 +3,11 @@
 A macOS menu-bar companion for Claude Code running in iTerm2. When Claude
 finishes a reply you get a toast; after it fades, a reminder tab is queued on
 the right edge of the screen — one per iTerm2 session. Each tab is colored by
-its git project and shows a glyph for the branch/worktree (the first letter of
-the branch's last path segment, or ● for main/master). Hover a tab to read the
-full reply; click it to jump to the owning iTerm2 pane (focused + maximized).
+its git project (all worktrees of a repo share the base color; a linked
+worktree uses a lighter tint) and shows a glyph for the branch (the first
+letter of the branch's last path segment, or ● for main/master). Hover a tab to
+read the full reply; click it to jump to the owning iTerm2 pane (focused +
+maximized).
 
 ## Requirements
 
