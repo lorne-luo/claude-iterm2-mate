@@ -59,6 +59,10 @@ final class MenuBarController: NSObject {
         let clear = NSMenuItem(title: "Clear All Tabs", action: #selector(clearAll), keyEquivalent: "")
         clear.target = self
         menu.addItem(clear)
+        let maximize = NSMenuItem(title: "Maximize Pane on Click", action: #selector(toggleMaximize(_:)), keyEquivalent: "")
+        maximize.target = self
+        maximize.state = ItermFocusAction.maximizeOnClick ? .on : .off
+        menu.addItem(maximize)
         let login = NSMenuItem(title: "Launch at Login", action: #selector(toggleLogin(_:)), keyEquivalent: "")
         login.target = self
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -75,6 +79,11 @@ final class MenuBarController: NSObject {
 
     @objc private func clearAll() {
         store.removeAll()
+    }
+
+    @objc private func toggleMaximize(_ sender: NSMenuItem) {
+        ItermFocusAction.maximizeOnClick.toggle()
+        sender.state = ItermFocusAction.maximizeOnClick ? .on : .off
     }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {

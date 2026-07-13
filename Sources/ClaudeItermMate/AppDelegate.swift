@@ -15,13 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar = MenuBarController(
             store: store,
             coordinator: coordinator,
-            focusAvailable: focusAction.isAvailable
+            focusAvailable: focusAction.canFocus
         )
         tabStrip = TabStripPanel(
             store: store,
             onClick: { [weak self] item in
                 guard let self else { return }
-                self.focusAction.focus(sessionUUID: item.sessionUUID)
+                self.focusAction.focus(sessionUUID: item.sessionUUID, maximize: ItermFocusAction.maximizeOnClick)
                 self.store.remove(sessionUUID: item.sessionUUID)
             },
             onHover: { [weak self] item, tabFrame in

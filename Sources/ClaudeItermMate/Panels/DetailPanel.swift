@@ -10,7 +10,9 @@ final class DetailPanel {
 
     static let showDelay: TimeInterval = 0.5
     static let hideGrace: TimeInterval = 0.2
-    static let size = CGSize(width: 420, height: 520)
+    static let width: CGFloat = 420
+    static let minHeight: CGFloat = 84
+    static let maxHeightFraction: CGFloat = 0.6
 
     /// Called by TabStripPanel: item != nil on hover enter, nil on exit.
     func hoverChanged(item: ReminderItem?, tabFrame: CGRect) {
@@ -27,7 +29,10 @@ final class DetailPanel {
 
     private func show(item: ReminderItem, tabFrame: CGRect) {
         let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let frame = EdgeGeometry.detailFrame(anchoring: tabFrame, size: Self.size, visible: visible)
+        let maxHeight = visible.height * Self.maxHeightFraction
+        let height = Self.fittingHeight(item: item, width: Self.width, maxHeight: maxHeight)
+        let size = CGSize(width: Self.width, height: height)
+        let frame = EdgeGeometry.detailFrame(anchoring: tabFrame, size: size, visible: visible)
         let panel = self.panel ?? PanelFactory.makePanel(frame: frame, canBecomeKey: true)
         self.panel = panel
         panel.contentViewController = NSHostingController(rootView: DetailView(
@@ -39,6 +44,16 @@ final class DetailPanel {
         ))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
+    }
+
+    /// Measure the card's natural height at the given width using a
+    /// non-scrolling layout, clamped to [minHeight, maxHeight]. Short messages
+    /// yield a compact panel; long ones cap out and scroll.
+    private static func fittingHeight(item: ReminderItem, width: CGFloat, maxHeight: CGFloat) -> CGFloat {
+        let probe = NSHostingView(rootView: DetailView(item: item, scrolls: false).frame(width: width))
+        probe.layoutSubtreeIfNeeded()
+        let natural = probe.fittingSize.height
+        return min(max(natural, minHeight), maxHeight)
     }
 
     private func scheduleHide() {
@@ -54,7 +69,10 @@ final class DetailPanel {
 
 struct DetailView: View {
     let item: ReminderItem
-    let onHoverChanged: (Bool) -> Void
+    /// true: message scrolls within the (clamped) panel. false: natural
+    /// height, used only to measure the content.
+    var scrolls: Bool = true
+    var onHoverChanged: (Bool) -> Void = { _ in }
 
     /// Static "2 minutes ago" snapshot computed when the card opens — unlike
     /// SwiftUI's `.relative` style it does not tick like a countdown. Within
@@ -95,20 +113,28 @@ struct DetailView: View {
 
             Divider()
 
-            ScrollView {
-                Text(item.fullMessage)
-                    .font(.system(size: 12))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-            }
+            messageBody
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxHeight: scrolls ? .infinity : nil, alignment: .topLeading)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 15))
         .overlay(RoundedRectangle(cornerRadius: 15).strokeBorder(.white.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
         .padding(10) // inset within the panel so the shadow is not clipped
         .onHover(perform: onHoverChanged)
+    }
+
+    @ViewBuilder private var messageBody: some View {
+        let text = Text(item.fullMessage)
+            .font(.system(size: 12))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+        if scrolls {
+            ScrollView { text }
+        } else {
+            text
+        }
     }
 }
