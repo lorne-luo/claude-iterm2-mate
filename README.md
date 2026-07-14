@@ -51,8 +51,16 @@ swift run -c release     # build and launch
 ```
 
 *Launch at Login* only works from a bundled `.app` (`SMAppService` requires a
-registered bundle); it is a no-op when started via `swift run`. To use it, wrap
-the built binary in an `.app` bundle and launch that.
+registered bundle); it is a no-op when started via `swift run`. To run as a
+proper bundle, use the `make` targets below.
+
+```bash
+make build       # assemble dist/ClaudeItermMate.app (ad-hoc signed)
+make run         # build, then launch from dist/
+make install     # build, then install to /Applications (quits any running instance first)
+make uninstall   # remove /Applications/ClaudeItermMate.app
+make clean        # remove build artifacts
+```
 
 ## Install
 
