@@ -54,6 +54,29 @@ swift run -c release     # build and launch
 registered bundle); it is a no-op when started via `swift run`. To use it, wrap
 the built binary in an `.app` bundle and launch that.
 
+## Install
+
+Download the latest `ClaudeItermMate-<version>.dmg` from
+[Releases](https://github.com/lorne-luo/claude-iterm2-mate/releases), open it,
+and drag **ClaudeItermMate** to Applications.
+
+The app is unsigned, so Gatekeeper blocks the first launch. Either right-click
+the app and choose **Open**, or clear the quarantine attribute:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/ClaudeItermMate.app
+```
+
+## Releasing (maintainer)
+
+```bash
+./scripts/release.sh 1.2.0
+```
+
+This validates the working tree, pushes a `v1.2.0` tag, and GitHub Actions
+builds the `.dmg` and publishes the GitHub Release. The version comes entirely
+from the tag; nothing version-related is committed.
+
 ## Hook installation
 
 Open the menu-bar menu → **Install Hook** (the status light is red when the
