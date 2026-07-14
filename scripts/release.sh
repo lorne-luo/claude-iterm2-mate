@@ -20,7 +20,7 @@ git fetch origin main --tags --quiet
 	|| { echo "error: local main not in sync with origin/main" >&2; exit 1; }
 
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
-	|| git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
+	|| git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
 	echo "error: tag $TAG already exists" >&2
 	exit 1
 fi
