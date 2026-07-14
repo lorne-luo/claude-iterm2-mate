@@ -18,7 +18,9 @@ final class ReminderCoordinator {
     /// Token of the toast currently shown in the single shared panel. Only the
     /// timer that owns the visible toast may hide it, so an older session's
     /// timer can never dismiss a newer session's toast early.
-    private var displayedToken: UUID?
+    private struct Displayed { let token: UUID; let session: String; let findable: Bool }
+    /// The toast currently in the shared panel, or nil when none is shown.
+    private var displayed: Displayed?
 
     /// One pausable countdown per live toast, keyed by its token. Independent
     /// per session so an older session's toast still queues on its own schedule
@@ -60,9 +62,11 @@ final class ReminderCoordinator {
         }
         timers[token] = timer
         if let item = store.items.first(where: { $0.sessionUUID == session }) {
-            // The outgoing toast is no longer readable — resume its (possibly
-            // hover-paused) timer so it still queues on schedule.
-            if let prev = displayedToken { timers[prev]?.resume() }
+            // A toast is already on screen — demote it into a tab immediately so
+            // only one toast shows at a time, then present the newcomer.
+            if let prev = displayed {
+                complete(token: prev.token, session: prev.session, findable: prev.findable)
+            }
             toastPanel?.show(
                 item: item,
                 on: visibleFrame,
@@ -70,13 +74,13 @@ final class ReminderCoordinator {
                 onClick: { [weak self] in
                     // Not findable → clicking does nothing; the toast just expires.
                     guard findable else { return }
-                    self?.displayedToken = nil
+                    self?.displayed = nil
                     self?.onActivate?(item)
                 },
                 onHover: { [weak self] inside in
                     // Pause the visible toast's countdown while the pointer is
                     // over it (the user is reading); resume on exit.
-                    guard let self, let shown = self.displayedToken else { return }
+                    guard let self, let shown = self.displayed?.token else { return }
                     if inside { self.timers[shown]?.pause() } else { self.timers[shown]?.resume() }
                 },
                 onMinimize: { [weak self] in
@@ -90,7 +94,7 @@ final class ReminderCoordinator {
                     self?.complete(token: token, session: session, findable: false)
                 }
             )
-            displayedToken = token
+            displayed = Displayed(token: token, session: session, findable: findable)
         }
         timer.start()
     }
@@ -109,9 +113,9 @@ final class ReminderCoordinator {
         }
         // Hide only if this timer's toast is still the one on screen; a newer
         // toast (any session) owns the panel and keeps its full time.
-        if displayedToken == token {
+        if displayed?.token == token {
             toastPanel?.hide()
-            displayedToken = nil
+            displayed = nil
         }
     }
 }

@@ -88,22 +88,23 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.store.items.isEmpty, "unfindable item is dropped after the toast")
     }
 
-    func testOlderSessionTimerDoesNotHideNewerToast() async throws {
+    func testNewToastDemotesPreviousImmediately() async throws {
         let toast = SpyToast()
         let coordinator = coordinator(toast, duration: 0.8)
-        // Distinct projects so both tabs coexist — dedup is per-project now.
+        // Distinct projects so both tabs coexist — dedup is per-project.
         coordinator.handle(payload(session: "A", repoRoot: "/tmp/alpha"))
-        try await Task.sleep(for: .milliseconds(400))
-        coordinator.handle(payload(session: "B", repoRoot: "/tmp/beta")) // different project, mid-A-toast
-        // Wait past A's timer (~0.8) but before B's timer (~1.2).
-        try await Task.sleep(for: .milliseconds(600))
+        try await settle()
+        coordinator.handle(payload(session: "B", repoRoot: "/tmp/beta"))
+        try await settle()
+        // B's arrival demoted A into a tab right away and B is now showing.
         XCTAssertEqual(toast.shown, ["A", "B"])
-        XCTAssertEqual(toast.hidden, 0, "A's expiring timer must not hide B's visible toast")
-        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["A"], "A should be queued once its toast expires")
-        // Wait past B's timer.
-        try await Task.sleep(for: .milliseconds(600))
-        XCTAssertEqual(toast.hidden, 1, "B's own timer hides B's toast")
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["A"], "A is queued the moment B arrives")
+        XCTAssertEqual(toast.hidden, 1, "A flew into the strip")
+        // B then queues normally when its own countdown expires (A's cancelled
+        // timer contributes nothing).
+        try await Task.sleep(for: .milliseconds(1200))
         XCTAssertEqual(Set(coordinator.store.queued.map(\.sessionUUID)), ["A", "B"])
+        XCTAssertEqual(toast.hidden, 2, "B flew into the strip on its own timer")
     }
 
     func testHoverPausesCountdownAndResumeQueues() async throws {
