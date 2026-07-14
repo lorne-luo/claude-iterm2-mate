@@ -8,10 +8,16 @@ final class ReminderCoordinatorTests: XCTestCase {
         var hidden = 0
         var lastOnClick: (() -> Void)?
         var lastOnHover: ((Bool) -> Void)?
-        func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void) {
+        var lastOnMinimize: (() -> Void)?
+        var lastShowsMinimize: Bool?
+        func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
+                  onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
+                  onMinimize: @escaping () -> Void) {
             shown.append(item.sessionUUID)
+            lastShowsMinimize = showsMinimize
             lastOnClick = onClick
             lastOnHover = onHover
+            lastOnMinimize = onMinimize
         }
         func hide() { hidden += 1 }
     }
@@ -123,5 +129,36 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.store.queued.isEmpty)
         try await Task.sleep(for: .milliseconds(600))
         XCTAssertEqual(coordinator.store.queued.count, 1)
+    }
+
+    func testMinimizeQueuesImmediately() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.4)
+        coordinator.handle(payload())
+        try await settle()
+        XCTAssertTrue(coordinator.store.queued.isEmpty)      // still toasting before minimize
+        toast.lastOnMinimize?()                               // click the minimize button
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"], "minimize queues the tab now")
+        XCTAssertEqual(toast.hidden, 1, "minimize flies the toast into the strip")
+        // Past the original countdown: no duplicate queue, no second hide.
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
+        XCTAssertEqual(toast.hidden, 1)
+    }
+
+    func testMinimizeShownWhenFindable() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10, findable: true)
+        coordinator.handle(payload())
+        try await settle()
+        XCTAssertEqual(toast.lastShowsMinimize, true)
+    }
+
+    func testMinimizeHiddenWhenUnfindable() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10, findable: false)
+        coordinator.handle(payload())
+        try await settle()
+        XCTAssertEqual(toast.lastShowsMinimize, false)
     }
 }

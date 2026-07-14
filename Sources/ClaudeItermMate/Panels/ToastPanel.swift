@@ -3,7 +3,9 @@ import SwiftUI
 
 @MainActor
 protocol ToastPanelProtocol: AnyObject {
-    func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void)
+    func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
+              onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
+              onMinimize: @escaping () -> Void)
     func hide()
 }
 
@@ -16,7 +18,9 @@ final class ToastPanel: ToastPanelProtocol {
     /// Caps a long (6-line) message; short ones size down naturally.
     static let maxHeight: CGFloat = 240
 
-    func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void) {
+    func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
+              onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
+              onMinimize: @escaping () -> Void) {
         hide()
         let height = Self.fittingHeight(item: item)
         let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
@@ -28,7 +32,9 @@ final class ToastPanel: ToastPanelProtocol {
                 self?.dismiss()
                 onClick()
             },
-            onHover: onHover
+            onHover: onHover,
+            showsMinimize: showsMinimize,
+            onMinimize: onMinimize
         ))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
@@ -77,6 +83,8 @@ struct ToastView: View {
     let item: ReminderItem
     var onTap: () -> Void = {}
     var onHover: (Bool) -> Void = { _ in }
+    var showsMinimize: Bool = false
+    var onMinimize: () -> Void = {}
 
     /// Character budget for the toast title at 360pt / 13pt semibold.
     static let titleBudget = 42
@@ -106,6 +114,8 @@ struct ToastView: View {
                 Text(Self.title(project: item.projectName, branch: item.branch))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(1)
+                    // Clear the top-left minimize button so the title isn't covered.
+                    .padding(.leading, showsMinimize ? 20 : 0)
                 Text(item.fullMessage)
                     .font(.system(size: 12))
                     .foregroundStyle(.primary)
@@ -119,6 +129,20 @@ struct ToastView: View {
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(0.12), lineWidth: 1))
+        .overlay(alignment: .topLeading) {
+            if showsMinimize {
+                Button(action: onMinimize) {
+                    Image(systemName: "minus")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 16, height: 16)
+                        .background(.secondary.opacity(0.25), in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Minimize to tab")
+                .padding(10)
+            }
+        }
         .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
         .padding(8) // inset within the panel so the shadow is not clipped
         .contentShape(Rectangle())

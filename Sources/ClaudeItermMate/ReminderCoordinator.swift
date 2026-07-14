@@ -56,20 +56,7 @@ final class ReminderCoordinator {
         let token = store.upsert(p)
         let session = p.sessionUUID
         let timer = ToastTimer(duration: toastDuration) { [weak self] in
-            guard let self else { return }
-            self.timers[token] = nil
-            if findable {
-                self.store.queueIfCurrent(sessionUUID: session, token: token)
-            } else {
-                // No jumpable pane: drop it instead of leaving a dead tab.
-                self.store.removeIfCurrent(sessionUUID: session, token: token)
-            }
-            // Hide only if this timer's toast is still the one on screen; a
-            // newer toast (any session) owns the panel and keeps its full time.
-            if self.displayedToken == token {
-                self.toastPanel?.hide()
-                self.displayedToken = nil
-            }
+            self?.complete(token: token, session: session, findable: findable)
         }
         timers[token] = timer
         if let item = store.items.first(where: { $0.sessionUUID == session }) {
@@ -79,6 +66,7 @@ final class ReminderCoordinator {
             toastPanel?.show(
                 item: item,
                 on: visibleFrame,
+                showsMinimize: findable,
                 onClick: { [weak self] in
                     // Not findable → clicking does nothing; the toast just expires.
                     guard findable else { return }
@@ -90,10 +78,35 @@ final class ReminderCoordinator {
                     // over it (the user is reading); resume on exit.
                     guard let self, let shown = self.displayedToken else { return }
                     if inside { self.timers[shown]?.pause() } else { self.timers[shown]?.resume() }
+                },
+                onMinimize: { [weak self] in
+                    // The button is only shown for findable toasts, so minimize
+                    // always becomes a tab. Reuses the timer's completion path.
+                    self?.complete(token: token, session: session, findable: true)
                 }
             )
             displayedToken = token
         }
         timer.start()
+    }
+
+    /// The end-of-toast transition, shared by the countdown timer and the
+    /// minimize button: queue the tab (or drop it if unfindable), cancel the
+    /// timer, and hide the panel if this toast is the one on screen.
+    private func complete(token: UUID, session: String, findable: Bool) {
+        timers[token]?.cancel()
+        timers[token] = nil
+        if findable {
+            store.queueIfCurrent(sessionUUID: session, token: token)
+        } else {
+            // No jumpable pane: drop it instead of leaving a dead tab.
+            store.removeIfCurrent(sessionUUID: session, token: token)
+        }
+        // Hide only if this timer's toast is still the one on screen; a newer
+        // toast (any session) owns the panel and keeps its full time.
+        if displayedToken == token {
+            toastPanel?.hide()
+            displayedToken = nil
+        }
     }
 }
