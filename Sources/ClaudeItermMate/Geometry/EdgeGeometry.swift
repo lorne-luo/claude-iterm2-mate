@@ -9,7 +9,6 @@ enum EdgeGeometry {
     static let screenMargin: CGFloat = 12
     /// The square "close all" tab pinned below the strip.
     static let closerSize: CGFloat = 28
-    static let toastSize = CGSize(width: 440, height: 156)
 
     static func maxVisibleTabs(visible: CGRect) -> Int {
         let usable = visible.height - 2 * screenMargin
@@ -48,12 +47,13 @@ enum EdgeGeometry {
         )
     }
 
-    static func toastFrame(visible: CGRect) -> CGRect {
+    /// Top-right corner, inset by the screen margin, at the given size.
+    static func toastFrame(size: CGSize, visible: CGRect) -> CGRect {
         CGRect(
-            x: visible.maxX - screenMargin - toastSize.width,
-            y: visible.maxY - screenMargin - toastSize.height,
-            width: toastSize.width,
-            height: toastSize.height
+            x: visible.maxX - screenMargin - size.width,
+            y: visible.maxY - screenMargin - size.height,
+            width: size.width,
+            height: size.height
         )
     }
 }

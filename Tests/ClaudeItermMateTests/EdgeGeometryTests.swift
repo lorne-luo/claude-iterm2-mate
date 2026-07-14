@@ -51,10 +51,11 @@ final class EdgeGeometryTests: XCTestCase {
         XCTAssertLessThanOrEqual(f.maxY, visible.maxY - EdgeGeometry.screenMargin)
     }
 
-    func testToastFrameIsTopRight() {
-        let f = EdgeGeometry.toastFrame(visible: visible)
+    func testToastFrameIsTopRightAtGivenSize() {
+        let size = CGSize(width: 440, height: 96)
+        let f = EdgeGeometry.toastFrame(size: size, visible: visible)
         XCTAssertEqual(f.maxX, visible.maxX - EdgeGeometry.screenMargin)
         XCTAssertEqual(f.maxY, visible.maxY - EdgeGeometry.screenMargin)
-        XCTAssertEqual(f.size, EdgeGeometry.toastSize)
+        XCTAssertEqual(f.size, size)
     }
 }

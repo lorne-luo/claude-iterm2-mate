@@ -20,9 +20,14 @@ final class ReminderCoordinator {
     /// timer can never dismiss a newer session's toast early.
     private var displayedToken: UUID?
 
+    /// One pausable countdown per live toast, keyed by its token. Independent
+    /// per session so an older session's toast still queues on its own schedule
+    /// even after a newer one takes over the shared panel.
+    private var timers: [UUID: ToastTimer] = [:]
+
     init(
         store: ReminderStore,
-        toastDuration: TimeInterval = 4.0,
+        toastDuration: TimeInterval = 8.0,
         toastPanel: ToastPanelProtocol?,
         probe: ItermSessionProbe = ItermSessionLookup()
     ) {
@@ -49,18 +54,10 @@ final class ReminderCoordinator {
 
     private func present(_ p: NotifyPayload, findable: Bool) {
         let token = store.upsert(p)
-        if let item = store.items.first(where: { $0.sessionUUID == p.sessionUUID }) {
-            toastPanel?.show(item: item, on: visibleFrame, onClick: { [weak self] in
-                // Not findable → clicking does nothing; the toast just expires.
-                guard findable else { return }
-                self?.displayedToken = nil
-                self?.onActivate?(item)
-            })
-            displayedToken = token
-        }
         let session = p.sessionUUID
-        DispatchQueue.main.asyncAfter(deadline: .now() + toastDuration) { [weak self] in
+        let timer = ToastTimer(duration: toastDuration) { [weak self] in
             guard let self else { return }
+            self.timers[token] = nil
             if findable {
                 self.store.queueIfCurrent(sessionUUID: session, token: token)
             } else {
@@ -74,5 +71,29 @@ final class ReminderCoordinator {
                 self.displayedToken = nil
             }
         }
+        timers[token] = timer
+        if let item = store.items.first(where: { $0.sessionUUID == session }) {
+            // The outgoing toast is no longer readable — resume its (possibly
+            // hover-paused) timer so it still queues on schedule.
+            if let prev = displayedToken { timers[prev]?.resume() }
+            toastPanel?.show(
+                item: item,
+                on: visibleFrame,
+                onClick: { [weak self] in
+                    // Not findable → clicking does nothing; the toast just expires.
+                    guard findable else { return }
+                    self?.displayedToken = nil
+                    self?.onActivate?(item)
+                },
+                onHover: { [weak self] inside in
+                    // Pause the visible toast's countdown while the pointer is
+                    // over it (the user is reading); resume on exit.
+                    guard let self, let shown = self.displayedToken else { return }
+                    if inside { self.timers[shown]?.pause() } else { self.timers[shown]?.resume() }
+                }
+            )
+            displayedToken = token
+        }
+        timer.start()
     }
 }

@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 protocol ToastPanelProtocol: AnyObject {
-    func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void)
+    func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void)
     func hide()
 }
 
@@ -11,18 +11,36 @@ protocol ToastPanelProtocol: AnyObject {
 final class ToastPanel: ToastPanelProtocol {
     private var panel: NSPanel?
 
-    func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void) {
+    static let width: CGFloat = 440
+    static let minHeight: CGFloat = 56
+    /// Caps a long (6-line) message; short ones size down naturally.
+    static let maxHeight: CGFloat = 240
+
+    func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void) {
         hide()
-        let frame = EdgeGeometry.toastFrame(visible: visible)
+        let height = Self.fittingHeight(item: item)
+        let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
         // canBecomeKey so the SwiftUI tap gesture receives the click.
         let panel = PanelFactory.makePanel(frame: frame, canBecomeKey: true)
-        panel.contentView = FirstMouseHostingView(rootView: ToastView(item: item, onTap: { [weak self] in
-            self?.dismiss()
-            onClick()
-        }))
+        panel.contentView = FirstMouseHostingView(rootView: ToastView(
+            item: item,
+            onTap: { [weak self] in
+                self?.dismiss()
+                onClick()
+            },
+            onHover: onHover
+        ))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
         self.panel = panel
+    }
+
+    /// Natural height of the toast card at `width`, clamped to [min, max], so a
+    /// short message doesn't leave a tall blank card. Mirrors DetailPanel.
+    private static func fittingHeight(item: ReminderItem) -> CGFloat {
+        let probe = NSHostingView(rootView: ToastView(item: item).frame(width: width))
+        probe.layoutSubtreeIfNeeded()
+        return min(max(probe.fittingSize.height, minHeight), maxHeight)
     }
 
     /// Immediate close (no fly-in) — used when the toast is clicked, since we're
@@ -58,6 +76,7 @@ final class ToastPanel: ToastPanelProtocol {
 struct ToastView: View {
     let item: ReminderItem
     var onTap: () -> Void = {}
+    var onHover: (Bool) -> Void = { _ in }
 
     /// Character budget for the toast title at 360pt / 13pt semibold.
     static let titleBudget = 42
@@ -96,7 +115,7 @@ struct ToastView: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(0.12), lineWidth: 1))
@@ -104,5 +123,6 @@ struct ToastView: View {
         .padding(8) // inset within the panel so the shadow is not clipped
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
+        .onHover(perform: onHover)
     }
 }

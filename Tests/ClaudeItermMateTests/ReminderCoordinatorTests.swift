@@ -7,9 +7,11 @@ final class ReminderCoordinatorTests: XCTestCase {
         var shown: [String] = []
         var hidden = 0
         var lastOnClick: (() -> Void)?
-        func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void) {
+        var lastOnHover: ((Bool) -> Void)?
+        func show(item: ReminderItem, on visible: CGRect, onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void) {
             shown.append(item.sessionUUID)
             lastOnClick = onClick
+            lastOnHover = onHover
         }
         func hide() { hidden += 1 }
     }
@@ -92,6 +94,20 @@ final class ReminderCoordinatorTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(150))
         XCTAssertEqual(toast.hidden, 1, "B's own timer hides B's toast")
         XCTAssertEqual(Set(coordinator.store.queued.map(\.sessionUUID)), ["A", "B"])
+    }
+
+    func testHoverPausesCountdownAndResumeQueues() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.3)
+        coordinator.handle(payload())
+        try await settle()
+        toast.lastOnHover?(true) // pointer enters mid-countdown → pause
+        try await Task.sleep(for: .milliseconds(500)) // well past the 0.3 term
+        XCTAssertTrue(coordinator.store.queued.isEmpty, "hover must pause the countdown")
+        XCTAssertEqual(toast.hidden, 0, "paused toast must not fly away")
+        toast.lastOnHover?(false) // pointer leaves → resume the remaining time
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"], "resume queues the tab")
     }
 
     func testReupsertRestartsToastCycle() async throws {
