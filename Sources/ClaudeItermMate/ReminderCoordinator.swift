@@ -83,6 +83,11 @@ final class ReminderCoordinator {
                     // The button is only shown for findable toasts, so minimize
                     // always becomes a tab. Reuses the timer's completion path.
                     self?.complete(token: token, session: session, findable: true)
+                },
+                onClose: { [weak self] in
+                    // Close dismisses without a tab — drop the item outright,
+                    // regardless of findability.
+                    self?.complete(token: token, session: session, findable: false)
                 }
             )
             displayedToken = token

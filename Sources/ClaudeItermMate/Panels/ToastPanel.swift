@@ -5,7 +5,7 @@ import SwiftUI
 protocol ToastPanelProtocol: AnyObject {
     func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
-              onMinimize: @escaping () -> Void)
+              onMinimize: @escaping () -> Void, onClose: @escaping () -> Void)
     func hide()
 }
 
@@ -20,7 +20,7 @@ final class ToastPanel: ToastPanelProtocol {
 
     func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
-              onMinimize: @escaping () -> Void) {
+              onMinimize: @escaping () -> Void, onClose: @escaping () -> Void) {
         hide()
         let height = Self.fittingHeight(item: item)
         let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
@@ -34,7 +34,8 @@ final class ToastPanel: ToastPanelProtocol {
             },
             onHover: onHover,
             showsMinimize: showsMinimize,
-            onMinimize: onMinimize
+            onMinimize: onMinimize,
+            onClose: onClose
         ))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
@@ -85,6 +86,7 @@ struct ToastView: View {
     var onHover: (Bool) -> Void = { _ in }
     var showsMinimize: Bool = false
     var onMinimize: () -> Void = {}
+    var onClose: () -> Void = {}
 
     /// Character budget for the toast title at 360pt / 13pt semibold.
     static let titleBudget = 42
@@ -103,6 +105,22 @@ struct ToastView: View {
         return prefix + branch.prefix(room) + "…"
     }
 
+    /// A small circular control (minimize / close) in the toast's top-right.
+    /// `.buttonStyle(.plain)` keeps the tap from bubbling to the card's
+    /// `onTapGesture`, which jumps to the pane.
+    private func iconButton(_ systemName: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 16, height: 16)
+                .background(.secondary.opacity(0.25), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
     var body: some View {
         let identity = item.identity
         HStack(alignment: .top, spacing: 10) {
@@ -114,8 +132,6 @@ struct ToastView: View {
                 Text(Self.title(project: item.projectName, branch: item.branch))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(1)
-                    // Clear the top-left minimize button so the title isn't covered.
-                    .padding(.leading, showsMinimize ? 20 : 0)
                 Text(item.fullMessage)
                     .font(.system(size: 12))
                     .foregroundStyle(.primary)
@@ -123,26 +139,19 @@ struct ToastView: View {
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer(minLength: 0)
+            // Top-right controls; laid out (not overlaid) so the text reserves
+            // room for them and never runs underneath.
+            HStack(spacing: 6) {
+                if showsMinimize {
+                    iconButton("minus", label: "Minimize to tab", action: onMinimize)
+                }
+                iconButton("xmark", label: "Close", action: onClose)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(0.12), lineWidth: 1))
-        .overlay(alignment: .topLeading) {
-            if showsMinimize {
-                Button(action: onMinimize) {
-                    Image(systemName: "minus")
-                        .font(.system(size: 9, weight: .bold))
-                        .frame(width: 16, height: 16)
-                        .background(.secondary.opacity(0.25), in: Circle())
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Minimize to tab")
-                .padding(10)
-            }
-        }
         .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
         .padding(8) // inset within the panel so the shadow is not clipped
         .contentShape(Rectangle())

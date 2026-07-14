@@ -9,15 +9,17 @@ final class ReminderCoordinatorTests: XCTestCase {
         var lastOnClick: (() -> Void)?
         var lastOnHover: ((Bool) -> Void)?
         var lastOnMinimize: (() -> Void)?
+        var lastOnClose: (() -> Void)?
         var lastShowsMinimize: Bool?
         func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
                   onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
-                  onMinimize: @escaping () -> Void) {
+                  onMinimize: @escaping () -> Void, onClose: @escaping () -> Void) {
             shown.append(item.sessionUUID)
             lastShowsMinimize = showsMinimize
             lastOnClick = onClick
             lastOnHover = onHover
             lastOnMinimize = onMinimize
+            lastOnClose = onClose
         }
         func hide() { hidden += 1 }
     }
@@ -160,5 +162,16 @@ final class ReminderCoordinatorTests: XCTestCase {
         coordinator.handle(payload())
         try await settle()
         XCTAssertEqual(toast.lastShowsMinimize, false)
+    }
+
+    func testCloseDismissesWithoutTab() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10, findable: true)
+        coordinator.handle(payload())
+        try await settle()
+        toast.lastOnClose?()                                  // click the close button
+        XCTAssertTrue(coordinator.store.queued.isEmpty, "close must not queue a tab")
+        XCTAssertTrue(coordinator.store.items.isEmpty, "close drops the item outright")
+        XCTAssertEqual(toast.hidden, 1, "close flies the toast away")
     }
 }
