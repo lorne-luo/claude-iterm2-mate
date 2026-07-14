@@ -15,6 +15,14 @@ struct NotifyPayload: Codable, Equatable {
     let branch: String?
     // True when the session runs in a linked git worktree; absent -> false.
     let isWorktree: Bool
+    // Message kind: absent for Stop notifications (backward compatible);
+    // "session_start" for the SessionStart hook's color-injection trigger.
+    let type: String?
+    // SessionStart trigger ("startup" / "resume" / "clear"); absent otherwise.
+    let source: String?
+    // False for non-iTerm2 sessions: the app shows a dismiss-only tab (no pane
+    // to jump to). Absent -> true (iTerm2 sessions, backward compatible).
+    let focusable: Bool
 
     enum CodingKeys: String, CodingKey {
         case sessionUUID = "session_uuid"
@@ -24,6 +32,7 @@ struct NotifyPayload: Codable, Equatable {
         case repoRoot = "repo_root"
         case branch
         case isWorktree = "is_worktree"
+        case type, source, focusable
     }
 
     init(from decoder: Decoder) throws {
@@ -37,9 +46,14 @@ struct NotifyPayload: Codable, Equatable {
         repoRoot = try c.decodeIfPresent(String.self, forKey: .repoRoot)
         branch = try c.decodeIfPresent(String.self, forKey: .branch)
         isWorktree = try c.decodeIfPresent(Bool.self, forKey: .isWorktree) ?? false
+        type = try c.decodeIfPresent(String.self, forKey: .type)
+        source = try c.decodeIfPresent(String.self, forKey: .source)
+        focusable = try c.decodeIfPresent(Bool.self, forKey: .focusable) ?? true
     }
 
     var projectName: String { (cwd as NSString).lastPathComponent }
+
+    var isSessionStart: Bool { type == "session_start" }
 
     static func decode(_ data: Data) -> NotifyPayload? {
         guard data.count <= maxPayloadBytes else { return nil }

@@ -106,9 +106,9 @@ private struct EdgeTabView: View {
 
     var body: some View {
         let identity = item.identity
-        let base = ReminderPalette.color(at: identity.colorIndex, worktree: item.isWorktree)
+        let base = ReminderPalette.color(at: item.colorIndex, level: item.lightenLevel)
         glyph(identity)
-            .foregroundStyle(ReminderPalette.glyphForeground(at: identity.colorIndex, worktree: item.isWorktree))
+            .foregroundStyle(ReminderPalette.glyphForeground(at: item.colorIndex, level: item.lightenLevel))
             .frame(width: EdgeGeometry.tabWidth, height: EdgeGeometry.tabHeight)
             .background {
                 // Subtle top-to-bottom sheen over the project color for depth.

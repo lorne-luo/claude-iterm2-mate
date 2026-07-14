@@ -6,7 +6,10 @@ protocol ToastPanelProtocol: AnyObject {
     func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
               onMinimize: @escaping () -> Void, onClose: @escaping () -> Void)
-    func hide()
+    /// Dismiss the toast. `intoTab` true → shrink toward the tab strip (it is
+    /// becoming a tab); false → fade out in place (it is being dropped, so a
+    /// fly-into-the-strip animation would be misleading — nothing lands there).
+    func hide(intoTab: Bool)
 }
 
 @MainActor
@@ -21,7 +24,7 @@ final class ToastPanel: ToastPanelProtocol {
     func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
               onMinimize: @escaping () -> Void, onClose: @escaping () -> Void) {
-        hide()
+        hide(intoTab: false)
         let height = Self.fittingHeight(item: item)
         let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
         // canBecomeKey so the SwiftUI tap gesture receives the click.
@@ -57,11 +60,22 @@ final class ToastPanel: ToastPanelProtocol {
         panel = nil
     }
 
-    /// Fly-into-the-tab-strip dismissal: shrink toward the right screen edge
-    /// (vertical center, where the strip lives) while fading.
-    func hide() {
+    /// Dismiss the toast. When it is becoming a tab, shrink toward the right
+    /// screen edge (vertical center, where the strip lives) while fading — a
+    /// fly-into-the-strip effect. When it is being dropped (unfindable / closed)
+    /// there is no tab to fly into, so just fade out in place.
+    func hide(intoTab: Bool) {
         guard let panel else { return }
         self.panel = nil
+        guard intoTab else {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.2
+                panel.animator().alphaValue = 0
+            }, completionHandler: {
+                panel.orderOut(nil)
+            })
+            return
+        }
         let visible = NSScreen.main?.visibleFrame ?? panel.frame
         let target = CGRect(
             x: visible.maxX - EdgeGeometry.tabWidth,
@@ -122,14 +136,13 @@ struct ToastView: View {
     }
 
     var body: some View {
-        let identity = item.identity
         HStack(alignment: .top, spacing: 10) {
             // Project-color bar ties the toast to its right-edge tab.
             RoundedRectangle(cornerRadius: 2)
-                .fill(ReminderPalette.color(at: identity.colorIndex, worktree: item.isWorktree))
+                .fill(ReminderPalette.color(at: item.colorIndex, level: item.lightenLevel))
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 4) {
-                Text(Self.title(project: item.projectName, branch: item.branch))
+                Text(Self.title(project: item.projectName, branch: item.branchLabel))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                 Text(item.fullMessage)

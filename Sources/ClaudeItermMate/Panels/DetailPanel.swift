@@ -100,7 +100,7 @@ struct DetailView: View {
     }
 
     var body: some View {
-        let accent = ReminderPalette.color(at: item.identity.colorIndex, worktree: item.isWorktree)
+        let accent = ReminderPalette.color(at: item.colorIndex, level: item.lightenLevel)
         VStack(spacing: 0) {
             // Header: neutral text on a very light wash of the project color.
             VStack(alignment: .leading, spacing: 5) {
@@ -122,8 +122,8 @@ struct DetailView: View {
                     .help("Close")
                     .accessibilityLabel("Close")
                 }
-                if let branch = item.branch, !branch.isEmpty {
-                    Label(branch, systemImage: "arrow.triangle.branch")
+                if let label = item.branchLabel {
+                    Label(label, systemImage: item.isWorktree ? "folder" : "arrow.triangle.branch")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                 }

@@ -110,20 +110,34 @@ function main(raw) {
   const itermSession = process.env.ITERM_SESSION_ID;
   const isSdk = (process.env.CLAUDE_CODE_ENTRYPOINT || "").startsWith("sdk");
   if (process.platform !== "darwin") return;
-  if (!itermSession || isSdk) {
+  // SDK / headless runs have no interactive terminal to jump to or color —
+  // a plain desktop notification is the only sensible response.
+  if (isSdk) {
     notifyMacOS(title, summary);
     return;
   }
 
+  // Non-iTerm2 sessions (VS Code terminal, tmux, Terminal.app, …) still go to
+  // the app, marked non-focusable: the app shows a tab you can dismiss but
+  // cannot click-to-jump (there is no iTerm2 pane), and it honors the app's
+  // "show non-iTerm2 sessions" toggle. With no iTerm2 session id, dedup falls
+  // back to Claude Code's own session_id, then cwd. If the app is not running
+  // the socket send fails and we fall back to a desktop notification below.
+  const focusable = !!itermSession;
+  const sessionUUID = focusable
+    ? itermSession.split(":").pop()
+    : (typeof input.session_id === "string" && input.session_id ? input.session_id : cwd);
+
   const git = gitInfo(cwd);
   const fields = {
-    session_uuid: itermSession.split(":").pop(),
+    session_uuid: sessionUUID,
     cwd,
     title,
     summary,
     full_message: typeof message === "string" ? message : "",
     timestamp: Date.now(),
   };
+  if (!focusable) fields.focusable = false;
   if (git.repo_root) fields.repo_root = git.repo_root;
   if (git.branch) fields.branch = git.branch;
   if (git.is_worktree) fields.is_worktree = true;

@@ -6,7 +6,7 @@ import Foundation
 /// `String.hashValue` which is per-process seeded.
 struct ReminderIdentity: Equatable {
     /// Number of colors in `ReminderPalette`; `colorIndex` is taken mod this.
-    static let paletteCount = 12
+    static let paletteCount = 8
     static let defaultGlyph = "●"
 
     /// Full base path (`repoRoot` if present, else `cwd`). Uniquely identifies a
@@ -32,6 +32,28 @@ struct ReminderIdentity: Equatable {
     private static func nonEmpty(_ s: String?) -> String? {
         guard let s, !s.isEmpty else { return nil }
         return s
+    }
+
+    /// The label shown where a branch name would go. For a normal checkout it
+    /// is the branch name; for a linked worktree it is the worktree's location
+    /// — whichever of the repo-relative or absolute path is shorter (so a
+    /// worktree kept under the repo reads as e.g. `.worktree/feat`, while one
+    /// elsewhere falls back to its absolute path).
+    static func locationLabel(repoRoot: String?, cwd: String, branch: String?, isWorktree: Bool) -> String? {
+        guard isWorktree else { return nonEmpty(branch) }
+        guard let repoRoot = nonEmpty(repoRoot) else { return cwd }
+        let rel = relativePath(from: repoRoot, to: cwd)
+        return rel.count <= cwd.count ? rel : cwd
+    }
+
+    /// POSIX relative path from `base` to `target` using `..` where needed.
+    static func relativePath(from base: String, to target: String) -> String {
+        let b = base.split(separator: "/").map(String.init)
+        let t = target.split(separator: "/").map(String.init)
+        var i = 0
+        while i < b.count, i < t.count, b[i] == t[i] { i += 1 }
+        let parts = Array(repeating: "..", count: b.count - i) + Array(t[i...])
+        return parts.isEmpty ? "." : parts.joined(separator: "/")
     }
 
     static func glyph(for branch: String?) -> String {

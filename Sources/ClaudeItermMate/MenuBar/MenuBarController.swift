@@ -41,7 +41,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem.button?.image = NSImage(
             systemSymbolName: symbol,
             accessibilityDescription: "Claude iTerm2 Mate"
-        )
+        )?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
     }
 
     /// A menu-item icon. With no color the symbol renders as a template in the
@@ -112,6 +112,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         login.isEnabled = installed
         login.image = symbol("power")
         menu.addItem(login)
+        let nonIterm = NSMenuItem(
+            title: "Show Non-iTerm2 Sessions", action: #selector(toggleNonIterm(_:)), keyEquivalent: ""
+        )
+        nonIterm.target = self
+        nonIterm.state = AppSettings.showNonIterm ? .on : .off
+        nonIterm.isEnabled = installed
+        nonIterm.image = symbol("macwindow.on.rectangle")
+        menu.addItem(nonIterm)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.image = symbol("xmark.circle")
@@ -166,6 +174,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleMaximize(_ sender: NSMenuItem) {
         ItermFocusAction.maximizeOnClick.toggle()
         sender.state = ItermFocusAction.maximizeOnClick ? .on : .off
+    }
+
+    @objc private func toggleNonIterm(_ sender: NSMenuItem) {
+        AppSettings.showNonIterm.toggle()
+        sender.state = AppSettings.showNonIterm ? .on : .off
     }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {

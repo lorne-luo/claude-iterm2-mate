@@ -16,15 +16,35 @@ struct ReminderItem: Identifiable, Equatable {
     var fullMessage: String
     var timestamp: Double
     var phase: ReminderPhase
+    /// Palette slot + worktree lighten level, assigned by the shared
+    /// `ColorAssigner` at upsert so tabs match the injected `/color` name.
+    var colorIndex: Int
+    var lightenLevel: Int
+    /// False for non-iTerm2 sessions: the tab/toast is dismiss-only (there is
+    /// no iTerm2 pane to jump to).
+    var focusable: Bool
 
     var id: String { sessionUUID }
     var identity: ReminderIdentity { ReminderIdentity(repoRoot: repoRoot, branch: branch, cwd: cwd) }
     var projectName: String { identity.project }
+    /// Branch name for a normal checkout; worktree path (shorter of relative /
+    /// absolute) for a linked worktree. Nil when there is nothing to show.
+    var branchLabel: String? {
+        ReminderIdentity.locationLabel(repoRoot: repoRoot, cwd: cwd, branch: branch, isWorktree: isWorktree)
+    }
 }
 
 @Observable
 final class ReminderStore {
     private(set) var items: [ReminderItem] = []
+
+    /// Shared color authority — the same instance drives `/color` injection,
+    /// so tab colors and prompt-bar colors stay in sync.
+    let assigner: ColorAssigner
+
+    init(assigner: ColorAssigner = ColorAssigner()) {
+        self.assigner = assigner
+    }
 
     var queued: [ReminderItem] { items.filter { $0.phase == .queued } }
 
@@ -37,6 +57,7 @@ final class ReminderStore {
     @discardableResult
     func upsert(_ p: NotifyPayload) -> UUID {
         let token = UUID()
+        let identity = ReminderIdentity(repoRoot: p.repoRoot, branch: p.branch, cwd: p.cwd)
         let item = ReminderItem(
             sessionUUID: p.sessionUUID,
             cwd: p.cwd,
@@ -46,7 +67,12 @@ final class ReminderStore {
             summary: p.summary,
             fullMessage: p.fullMessage,
             timestamp: p.timestamp,
-            phase: .toasting(token: token)
+            phase: .toasting(token: token),
+            colorIndex: assigner.colorIndex(for: identity.key),
+            lightenLevel: assigner.lightenLevel(
+                for: identity.key, branch: p.branch, isWorktree: p.isWorktree, cwd: p.cwd
+            ),
+            focusable: p.focusable
         )
         items.removeAll { $0.identity.key == item.identity.key }
         items.insert(item, at: 0)

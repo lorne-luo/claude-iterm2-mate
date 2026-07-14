@@ -87,4 +87,52 @@ final class ReminderIdentityTests: XCTestCase {
         XCTAssertLessThanOrEqual(title.count, ToastView.titleBudget)
         XCTAssertTrue(title.hasPrefix("[CC] myproj · "), "project part must be preserved")
     }
+
+    // MARK: location label (branch name vs worktree path)
+
+    func testLocationLabelIsBranchForNormalCheckout() {
+        XCTAssertEqual(
+            ReminderIdentity.locationLabel(repoRoot: "/x/proj", cwd: "/x/proj", branch: "main", isWorktree: false),
+            "main"
+        )
+        XCTAssertEqual(
+            ReminderIdentity.locationLabel(repoRoot: "/x/proj", cwd: "/x/proj/sub", branch: "feat/a", isWorktree: false),
+            "feat/a"
+        )
+    }
+
+    func testLocationLabelIsRelativePathForWorktreeUnderRepo() {
+        // .worktree/feat is far shorter than the absolute path → relative wins.
+        XCTAssertEqual(
+            ReminderIdentity.locationLabel(
+                repoRoot: "/Users/me/proj", cwd: "/Users/me/proj/.worktree/feat",
+                branch: "feat", isWorktree: true
+            ),
+            ".worktree/feat"
+        )
+    }
+
+    func testLocationLabelIsAbsoluteWhenShorterThanRelative() {
+        // Worktree far from the repo: the `..`-heavy relative path is longer
+        // than the absolute, so the absolute path is shown.
+        let repoRoot = "/Users/me/deeply/nested/project/root"
+        let cwd = "/tmp/wt"
+        XCTAssertEqual(
+            ReminderIdentity.locationLabel(repoRoot: repoRoot, cwd: cwd, branch: "feat", isWorktree: true),
+            cwd
+        )
+    }
+
+    func testLocationLabelFallsBackToCwdWithoutRepoRoot() {
+        XCTAssertEqual(
+            ReminderIdentity.locationLabel(repoRoot: nil, cwd: "/tmp/wt", branch: "feat", isWorktree: true),
+            "/tmp/wt"
+        )
+    }
+
+    func testRelativePathComputesDotDotSegments() {
+        XCTAssertEqual(ReminderIdentity.relativePath(from: "/a/b/c", to: "/a/b/c/d/e"), "d/e")
+        XCTAssertEqual(ReminderIdentity.relativePath(from: "/a/b/c", to: "/a/x"), "../../x")
+        XCTAssertEqual(ReminderIdentity.relativePath(from: "/a/b", to: "/a/b"), ".")
+    }
 }

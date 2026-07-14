@@ -15,6 +15,20 @@ final class ReminderCoordinator {
     /// reminder (same as clicking its tab). Injected by AppDelegate.
     var onActivate: ((ReminderItem) -> Void)?
 
+    /// Invoked for a session_start message with the session UUID and the
+    /// project's assigned `/color` name. AppDelegate wires this to
+    /// `ItermColorAction` (delayed off-main); tests observe it directly.
+    var onSessionStart: ((_ sessionUUID: String, _ colorName: String) -> Void)?
+
+    /// Whether non-iTerm2 (non-focusable) sessions should surface as tabs.
+    /// When false they fall back to a desktop notification via `onNotify`.
+    /// Defaults to always-on; AppDelegate wires it to `AppSettings.showNonIterm`.
+    var isNonItermEnabled: () -> Bool = { true }
+
+    /// Emit a plain desktop notification (title, body) — used for non-iTerm2
+    /// sessions when `isNonItermEnabled` is off. Injected by AppDelegate.
+    var onNotify: ((_ title: String, _ body: String) -> Void)?
+
     /// Token of the toast currently shown in the single shared panel. Only the
     /// timer that owns the visible toast may hide it, so an older session's
     /// timer can never dismiss a newer session's toast early.
@@ -47,6 +61,28 @@ final class ReminderCoordinator {
     /// present on main. A reminder whose session is not findable still toasts
     /// but never becomes a tab.
     func handle(_ p: NotifyPayload) {
+        if p.isSessionStart {
+            // Color-injection trigger, not a reminder: assign (or look up) the
+            // project's color and lighten level now — session-start order also
+            // fixes worktree tint order — then hand off to the injector.
+            let identity = ReminderIdentity(repoRoot: p.repoRoot, branch: p.branch, cwd: p.cwd)
+            let name = store.assigner.colorName(for: identity.key)
+            _ = store.assigner.lightenLevel(
+                for: identity.key, branch: p.branch, isWorktree: p.isWorktree, cwd: p.cwd
+            )
+            onSessionStart?(p.sessionUUID, name)
+            return
+        }
+        if !p.focusable {
+            // Non-iTerm2: no pane to probe/jump to. Show a dismiss-only tab when
+            // the toggle is on; otherwise fall back to a desktop notification.
+            if isNonItermEnabled() {
+                present(p, findable: true)
+            } else {
+                onNotify?(p.title, p.summary)
+            }
+            return
+        }
         let probe = self.probe
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let findable = probe.canFind(p.sessionUUID)
@@ -112,9 +148,11 @@ final class ReminderCoordinator {
             store.removeIfCurrent(sessionUUID: session, token: token)
         }
         // Hide only if this timer's toast is still the one on screen; a newer
-        // toast (any session) owns the panel and keeps its full time.
+        // toast (any session) owns the panel and keeps its full time. Shrink
+        // into the strip only when it actually became a tab (findable); a
+        // dropped toast just fades so the animation never lies about a tab.
         if displayed?.token == token {
-            toastPanel?.hide()
+            toastPanel?.hide(intoTab: findable)
             displayed = nil
         }
     }

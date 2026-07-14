@@ -6,6 +6,7 @@ final class ReminderCoordinatorTests: XCTestCase {
     final class SpyToast: ToastPanelProtocol {
         var shown: [String] = []
         var hidden = 0
+        var hideIntoTab: [Bool] = []
         var lastOnClick: (() -> Void)?
         var lastOnHover: ((Bool) -> Void)?
         var lastOnMinimize: (() -> Void)?
@@ -21,7 +22,7 @@ final class ReminderCoordinatorTests: XCTestCase {
             lastOnMinimize = onMinimize
             lastOnClose = onClose
         }
-        func hide() { hidden += 1 }
+        func hide(intoTab: Bool) { hidden += 1; hideIntoTab.append(intoTab) }
     }
 
     struct StubProbe: ItermSessionProbe {
@@ -143,6 +144,7 @@ final class ReminderCoordinatorTests: XCTestCase {
         toast.lastOnMinimize?()                               // click the minimize button
         XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"], "minimize queues the tab now")
         XCTAssertEqual(toast.hidden, 1, "minimize flies the toast into the strip")
+        XCTAssertEqual(toast.hideIntoTab, [true], "minimize becomes a tab → shrink into the strip")
         // Past the original countdown: no duplicate queue, no second hide.
         try await Task.sleep(for: .milliseconds(1200))
         XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
@@ -173,6 +175,27 @@ final class ReminderCoordinatorTests: XCTestCase {
         toast.lastOnClose?()                                  // click the close button
         XCTAssertTrue(coordinator.store.queued.isEmpty, "close must not queue a tab")
         XCTAssertTrue(coordinator.store.items.isEmpty, "close drops the item outright")
-        XCTAssertEqual(toast.hidden, 1, "close flies the toast away")
+        XCTAssertEqual(toast.hidden, 1, "close still dismisses the toast")
+        XCTAssertEqual(toast.hideIntoTab, [false], "close drops it → fade in place, no shrink-into-tab")
+    }
+
+    func testUnfindableTimerExpiryFadesWithoutShrink() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.4, findable: false)
+        coordinator.handle(payload())
+        try await settle()
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertTrue(coordinator.store.items.isEmpty, "unfindable session is dropped")
+        XCTAssertEqual(toast.hideIntoTab, [false], "no tab to fly into → fade, not shrink")
+    }
+
+    func testTimerExpiryIntoTabShrinks() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.4, findable: true)
+        coordinator.handle(payload())
+        try await settle()
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
+        XCTAssertEqual(toast.hideIntoTab, [true], "became a tab → shrink into the strip")
     }
 }

@@ -8,11 +8,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tabStrip: TabStripPanel?
     private let detail = DetailPanel()
     private let focusAction = ItermFocusAction()
+    private let colorAction = ItermColorAction()
     private var menuBar: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel())
         coordinator.onActivate = { [weak self] item in self?.activate(item) }
+        coordinator.isNonItermEnabled = { AppSettings.showNonIterm }
+        coordinator.onNotify = { [weak self] title, body in self?.desktopNotify(title: title, body: body) }
+        let colorAction = self.colorAction
+        coordinator.onSessionStart = { sessionUUID, colorName in
+            // Delay so a freshly launched Claude Code TUI is in raw mode and
+            // owns the tty before the keystrokes arrive; injection itself is
+            // fire-and-forget off the main thread.
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.0) {
+                colorAction.inject(sessionUUID: sessionUUID, colorName: colorName)
+            }
+        }
         menuBar = MenuBarController(focusAvailable: focusAction.canFocus)
         tabStrip = TabStripPanel(
             store: store,
@@ -38,10 +50,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Jump to the pane owning a reminder and consume it. Shared by tab clicks
-    /// and toast clicks.
+    /// and toast clicks. Non-focusable (non-iTerm2) reminders have no pane to
+    /// jump to, so clicking merely dismisses them.
     private func activate(_ item: ReminderItem) {
-        focusAction.focus(sessionUUID: item.sessionUUID, maximize: ItermFocusAction.maximizeOnClick)
+        if item.focusable {
+            focusAction.focus(sessionUUID: item.sessionUUID, maximize: ItermFocusAction.maximizeOnClick)
+        }
         store.remove(sessionUUID: item.sessionUUID)
+    }
+
+    /// Plain macOS desktop notification for non-iTerm2 sessions when the
+    /// "show non-iTerm2 sessions" toggle is off.
+    private func desktopNotify(title: String, body: String) {
+        let safeTitle = title.replacingOccurrences(of: "\"", with: "“")
+        let safeBody = body.replacingOccurrences(of: "\"", with: "“")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", "display notification \"\(safeBody)\" with title \"\(safeTitle)\""]
+        try? p.run()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

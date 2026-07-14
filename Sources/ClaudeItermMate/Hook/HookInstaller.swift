@@ -1,7 +1,8 @@
 import Foundation
 
-/// Installs the `mate-notify` Stop hook: copies the bundled script to a stable
-/// App Support path and registers it in `~/.claude/settings.json`.
+/// Installs the app's Claude Code hooks — the `mate-notify` Stop hook and the
+/// `mate-session-start` SessionStart hook — by copying the bundled scripts to
+/// a stable App Support path and registering them in `~/.claude/settings.json`.
 struct HookInstaller {
     enum InstallError: Error {
         case bundledScriptMissing
@@ -12,6 +13,12 @@ struct HookInstaller {
     static var scriptDestURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/ClaudeItermMate/mate-notify.js")
+    }
+
+    /// Install location for the SessionStart (color injection) hook script.
+    static var sessionStartScriptDestURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/ClaudeItermMate/mate-session-start.js")
     }
 
     static var settingsURL: URL {
@@ -32,25 +39,30 @@ struct HookInstaller {
         "node \"\(scriptPath)\""
     }
 
-    static func settingsByAddingHook(_ json: [String: Any], command: String) -> [String: Any] {
+    static func settingsByAddingHook(
+        _ json: [String: Any],
+        command: String,
+        event: String = "Stop",
+        marker: String = "mate-notify.js"
+    ) -> [String: Any] {
         var settings = json
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
-        var stop = hooks["Stop"] as? [[String: Any]] ?? []
+        var groups = hooks[event] as? [[String: Any]] ?? []
 
-        for group in stop {
+        for group in groups {
             for entry in group["hooks"] as? [[String: Any]] ?? [] {
                 if let existing = entry["command"] as? String,
-                   existing.contains("mate-notify.js") {
+                   existing.contains(marker) {
                     return json
                 }
             }
         }
 
-        stop.append([
+        groups.append([
             "matcher": "",
             "hooks": [["type": "command", "command": command]],
         ])
-        hooks["Stop"] = stop
+        hooks[event] = groups
         settings["hooks"] = hooks
         return settings
     }
@@ -59,44 +71,53 @@ struct HookInstaller {
     /// hook entry whose command references `mate-notify.js`, removes any group
     /// left with no hooks, and preserves every other key, group and hook.
     /// Returns `json` unchanged when there is no `mate-notify.js` hook.
-    static func settingsByRemovingHook(_ json: [String: Any]) -> [String: Any] {
+    static func settingsByRemovingHook(
+        _ json: [String: Any],
+        event: String = "Stop",
+        marker: String = "mate-notify.js"
+    ) -> [String: Any] {
         guard var hooks = json["hooks"] as? [String: Any],
-              let stop = hooks["Stop"] as? [[String: Any]]
+              let groups = hooks[event] as? [[String: Any]]
         else { return json }
 
         var changed = false
-        var newStop: [[String: Any]] = []
-        for var group in stop {
+        var newGroups: [[String: Any]] = []
+        for var group in groups {
             let entries = group["hooks"] as? [[String: Any]] ?? []
             let kept = entries.filter { entry in
-                !((entry["command"] as? String)?.contains("mate-notify.js") ?? false)
+                !((entry["command"] as? String)?.contains(marker) ?? false)
             }
             if kept.count != entries.count { changed = true }
             if kept.isEmpty { continue } // drop emptied group
             group["hooks"] = kept
-            newStop.append(group)
+            newGroups.append(group)
         }
         guard changed else { return json }
 
         var settings = json
-        hooks["Stop"] = newStop
+        hooks[event] = newGroups
         settings["hooks"] = hooks
         return settings
     }
 
-    /// Copy the bundled script to `scriptDestURL` and register the Stop hook.
+    /// Copy the bundled scripts to App Support and register the Stop and
+    /// SessionStart hooks.
     func install() throws {
         let fm = FileManager.default
-        guard let bundled = Bundle.module.url(forResource: "mate-notify", withExtension: "js") else {
-            throw InstallError.bundledScriptMissing
-        }
 
-        let dest = Self.scriptDestURL
-        try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if fm.fileExists(atPath: dest.path) {
-            try fm.removeItem(at: dest)
+        for (resource, dest) in [
+            ("mate-notify", Self.scriptDestURL),
+            ("mate-session-start", Self.sessionStartScriptDestURL),
+        ] {
+            guard let bundled = Bundle.module.url(forResource: resource, withExtension: "js") else {
+                throw InstallError.bundledScriptMissing
+            }
+            try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: dest)
+            }
+            try fm.copyItem(at: bundled, to: dest)
         }
-        try fm.copyItem(at: bundled, to: dest)
 
         let settingsURL = Self.settingsURL
         let current: [String: Any]
@@ -108,7 +129,15 @@ struct HookInstaller {
             current = [:]
         }
 
-        let updated = Self.settingsByAddingHook(current, command: Self.hookCommand(scriptPath: dest.path))
+        var updated = Self.settingsByAddingHook(
+            current, command: Self.hookCommand(scriptPath: Self.scriptDestURL.path)
+        )
+        updated = Self.settingsByAddingHook(
+            updated,
+            command: Self.hookCommand(scriptPath: Self.sessionStartScriptDestURL.path),
+            event: "SessionStart",
+            marker: "mate-session-start.js"
+        )
         try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         var data = try JSONSerialization.data(
             withJSONObject: updated,
@@ -118,27 +147,30 @@ struct HookInstaller {
         try data.write(to: settingsURL)
     }
 
-    /// Remove the Stop hook from settings.json and delete the App Support copy
-    /// of the script. No-op sections are tolerated (missing file / no hook).
+    /// Remove both hooks from settings.json and delete the App Support copies
+    /// of the scripts. No-op sections are tolerated (missing file / no hook).
     func uninstall() throws {
         let fm = FileManager.default
         let settingsURL = Self.settingsURL
 
-        // Remove the hook first. If settings.json exists but is non-empty and
-        // unparseable, abort WITHOUT deleting the script — otherwise we'd leave
-        // a dangling `node <missing path>` Stop hook that errors on every Stop.
+        // Remove the hooks first. If settings.json exists but is non-empty and
+        // unparseable, abort WITHOUT deleting the scripts — otherwise we'd
+        // leave dangling `node <missing path>` hooks that error on every event.
         if let data = try? Data(contentsOf: settingsURL), !data.isEmpty {
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw InstallError.settingsUnreadable
             }
-            let updated = Self.settingsByRemovingHook(object)
+            var updated = Self.settingsByRemovingHook(object)
+            updated = Self.settingsByRemovingHook(
+                updated, event: "SessionStart", marker: "mate-session-start.js"
+            )
             var out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
             out.append(0x0A)
             try out.write(to: settingsURL)
         }
 
-        let dest = Self.scriptDestURL
-        if fm.fileExists(atPath: dest.path) {
+        for dest in [Self.scriptDestURL, Self.sessionStartScriptDestURL]
+        where fm.fileExists(atPath: dest.path) {
             try fm.removeItem(at: dest)
         }
     }
