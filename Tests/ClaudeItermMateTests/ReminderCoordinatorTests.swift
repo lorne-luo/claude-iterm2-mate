@@ -34,20 +34,22 @@ final class ReminderCoordinatorTests: XCTestCase {
                             probe: StubProbe(findable: findable))
     }
 
-    /// `handle` probes iTerm2 off-main then presents on main — a brief yield
-    /// lets that round-trip complete before asserting on the toast.
+    /// `handle` probes iTerm2 off-main then presents on main — a yield lets that
+    /// round-trip complete before asserting on the toast. These are wall-clock
+    /// timing tests; margins are kept generous so scheduling jitter on slow/loaded
+    /// CI runners does not flip an assertion (all timings scaled together).
     private func settle() async throws {
-        try await Task.sleep(for: .milliseconds(60))
+        try await Task.sleep(for: .milliseconds(240))
     }
 
     func testHandleShowsToastThenQueuesAfterDuration() async throws {
         let toast = SpyToast()
-        let coordinator = coordinator(toast, duration: 0.1)
+        let coordinator = coordinator(toast, duration: 0.4)
         coordinator.handle(payload())
         try await settle()
         XCTAssertEqual(toast.shown, ["S1"])
         XCTAssertTrue(coordinator.store.queued.isEmpty)
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(1200))
         XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
         XCTAssertEqual(toast.hidden, 1)
     }
@@ -65,7 +67,7 @@ final class ReminderCoordinatorTests: XCTestCase {
 
     func testUnfindableSessionOnlyToastsNoTabNoJump() async throws {
         let toast = SpyToast()
-        let coordinator = coordinator(toast, duration: 0.1, findable: false)
+        let coordinator = coordinator(toast, duration: 0.4, findable: false)
         var activated: [String] = []
         coordinator.onActivate = { activated.append($0.sessionUUID) }
         coordinator.handle(payload())
@@ -73,53 +75,53 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertEqual(toast.shown, ["S1"], "an unfindable session still toasts")
         toast.lastOnClick?()
         XCTAssertTrue(activated.isEmpty, "clicking an unfindable toast must not jump")
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(1200))
         XCTAssertTrue(coordinator.store.queued.isEmpty, "unfindable session must not become a tab")
         XCTAssertTrue(coordinator.store.items.isEmpty, "unfindable item is dropped after the toast")
     }
 
     func testOlderSessionTimerDoesNotHideNewerToast() async throws {
         let toast = SpyToast()
-        let coordinator = coordinator(toast, duration: 0.2)
+        let coordinator = coordinator(toast, duration: 0.8)
         // Distinct projects so both tabs coexist — dedup is per-project now.
         coordinator.handle(payload(session: "A", repoRoot: "/tmp/alpha"))
-        try await Task.sleep(for: .milliseconds(100))
+        try await Task.sleep(for: .milliseconds(400))
         coordinator.handle(payload(session: "B", repoRoot: "/tmp/beta")) // different project, mid-A-toast
-        // Wait past A's timer (~0.2) but before B's timer (~0.3).
-        try await Task.sleep(for: .milliseconds(150))
+        // Wait past A's timer (~0.8) but before B's timer (~1.2).
+        try await Task.sleep(for: .milliseconds(600))
         XCTAssertEqual(toast.shown, ["A", "B"])
         XCTAssertEqual(toast.hidden, 0, "A's expiring timer must not hide B's visible toast")
         XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["A"], "A should be queued once its toast expires")
         // Wait past B's timer.
-        try await Task.sleep(for: .milliseconds(150))
+        try await Task.sleep(for: .milliseconds(600))
         XCTAssertEqual(toast.hidden, 1, "B's own timer hides B's toast")
         XCTAssertEqual(Set(coordinator.store.queued.map(\.sessionUUID)), ["A", "B"])
     }
 
     func testHoverPausesCountdownAndResumeQueues() async throws {
         let toast = SpyToast()
-        let coordinator = coordinator(toast, duration: 0.3)
+        let coordinator = coordinator(toast, duration: 1.2)
         coordinator.handle(payload())
         try await settle()
         toast.lastOnHover?(true) // pointer enters mid-countdown → pause
-        try await Task.sleep(for: .milliseconds(500)) // well past the 0.3 term
+        try await Task.sleep(for: .milliseconds(2000)) // well past the 1.2 term
         XCTAssertTrue(coordinator.store.queued.isEmpty, "hover must pause the countdown")
         XCTAssertEqual(toast.hidden, 0, "paused toast must not fly away")
         toast.lastOnHover?(false) // pointer leaves → resume the remaining time
-        try await Task.sleep(for: .milliseconds(400))
+        try await Task.sleep(for: .milliseconds(1600))
         XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"], "resume queues the tab")
     }
 
     func testReupsertRestartsToastCycle() async throws {
         let toast = SpyToast()
-        let coordinator = coordinator(toast, duration: 0.2)
+        let coordinator = coordinator(toast, duration: 0.8)
         coordinator.handle(payload())
-        try await Task.sleep(for: .milliseconds(100))
+        try await Task.sleep(for: .milliseconds(400))
         coordinator.handle(payload()) // same session mid-toast
-        try await Task.sleep(for: .milliseconds(150))
-        // first timer (due at 200ms) must not have queued the replaced item
+        try await Task.sleep(for: .milliseconds(600))
+        // first timer (due at 800ms) must not have queued the replaced item
         XCTAssertTrue(coordinator.store.queued.isEmpty)
-        try await Task.sleep(for: .milliseconds(150))
+        try await Task.sleep(for: .milliseconds(600))
         XCTAssertEqual(coordinator.store.queued.count, 1)
     }
 }
