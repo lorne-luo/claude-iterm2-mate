@@ -36,7 +36,7 @@ click to return to — so nothing sits idle waiting for you.
 
 ## Requirements
 
-- macOS 14+
+- macOS 14+ on Apple Silicon (the released `.dmg` ships an arm64-only binary)
 - iTerm2 with the Python API enabled
 - Node.js (runs the Claude Code `Stop` hook)
 - For click-to-focus: [it2](https://pypi.org/project/it2/)
