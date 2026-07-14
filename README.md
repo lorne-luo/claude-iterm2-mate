@@ -36,7 +36,7 @@ click to return to — so nothing sits idle waiting for you.
 
 ## Requirements
 
-- macOS 14+
+- macOS 14+ on Apple Silicon (the released `.dmg` ships an arm64-only binary)
 - iTerm2 with the Python API enabled
 - Node.js (runs the Claude Code `Stop` hook)
 - For click-to-focus: [it2](https://pypi.org/project/it2/)
@@ -51,8 +51,39 @@ swift run -c release     # build and launch
 ```
 
 *Launch at Login* only works from a bundled `.app` (`SMAppService` requires a
-registered bundle); it is a no-op when started via `swift run`. To use it, wrap
-the built binary in an `.app` bundle and launch that.
+registered bundle); it is a no-op when started via `swift run`. To run as a
+proper bundle, use the `make` targets below.
+
+```bash
+make build       # assemble dist/ClaudeItermMate.app (ad-hoc signed)
+make run         # build, then launch from dist/
+make install     # build, then install to /Applications (quits any running instance first)
+make uninstall   # remove /Applications/ClaudeItermMate.app
+make clean        # remove build artifacts
+```
+
+## Install
+
+Download the latest `ClaudeItermMate-<version>.dmg` from
+[Releases](https://github.com/lorne-luo/claude-iterm2-mate/releases), open it,
+and drag **ClaudeItermMate** to Applications.
+
+The app is unsigned, so Gatekeeper blocks the first launch. Either right-click
+the app and choose **Open**, or clear the quarantine attribute:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/ClaudeItermMate.app
+```
+
+## Releasing (maintainer)
+
+```bash
+./scripts/release.sh 1.2.0
+```
+
+This validates the working tree, pushes a `v1.2.0` tag, and GitHub Actions
+builds the `.dmg` and publishes the GitHub Release. The version comes entirely
+from the tag; nothing version-related is committed.
 
 ## Hook installation
 
