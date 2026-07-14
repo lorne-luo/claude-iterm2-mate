@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onClearAll: { [weak self] in self?.store.removeAll() }
         )
+        detail.onClose = { [weak self] item in self?.store.remove(sessionUUID: item.sessionUUID) }
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
         }

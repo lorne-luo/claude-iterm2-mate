@@ -8,6 +8,9 @@ final class DetailPanel {
     private var hideWork: DispatchWorkItem?
     private var mouseInsideDetail = false
 
+    /// Invoked when the popup's close button is clicked — remove the tab.
+    var onClose: ((ReminderItem) -> Void)?
+
     static let showDelay: TimeInterval = 0.5
     static let hideGrace: TimeInterval = 0.2
     static let width: CGFloat = 520
@@ -40,6 +43,14 @@ final class DetailPanel {
             onHoverChanged: { [weak self] inside in
                 self?.mouseInsideDetail = inside
                 if inside { self?.hideWork?.cancel() } else { self?.scheduleHide() }
+            },
+            onClose: { [weak self] in
+                guard let self else { return }
+                self.showWork?.cancel()
+                self.hideWork?.cancel()
+                self.mouseInsideDetail = false
+                self.panel?.orderOut(nil)
+                self.onClose?(item)
             }
         ))
         panel.setFrame(frame, display: true)
@@ -73,6 +84,7 @@ struct DetailView: View {
     /// height, used only to measure the content.
     var scrolls: Bool = true
     var onHoverChanged: (Bool) -> Void = { _ in }
+    var onClose: () -> Void = {}
 
     /// Static "2 minutes ago" snapshot computed when the card opens — unlike
     /// SwiftUI's `.relative` style it does not tick like a countdown. Within
@@ -92,13 +104,23 @@ struct DetailView: View {
         VStack(spacing: 0) {
             // Header: neutral text on a very light wash of the project color.
             VStack(alignment: .leading, spacing: 5) {
-                HStack {
+                HStack(spacing: 8) {
                     Text(item.projectName)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                     Spacer()
                     Text(Self.relativeTime(item.timestamp))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .frame(width: 16, height: 16)
+                            .background(.secondary.opacity(0.25), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close")
+                    .accessibilityLabel("Close")
                 }
                 if let branch = item.branch, !branch.isEmpty {
                     Label(branch, systemImage: "arrow.triangle.branch")
