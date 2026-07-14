@@ -28,9 +28,12 @@ final class ReminderStore {
 
     var queued: [ReminderItem] { items.filter { $0.phase == .queued } }
 
-    /// Insert or update the reminder for a session and start a new toast
-    /// cycle. Returns the toast token; `queueIfCurrent` only acts when the
-    /// token still matches, so a replaced toast's timer can never fire.
+    /// Insert or update the reminder for a project and start a new toast
+    /// cycle. Dedup is by project path (`identity.key`): a later message for
+    /// the same project removes the earlier tab and inserts the new one at the
+    /// top, so a project has at most one tab. Returns the toast token;
+    /// `queueIfCurrent` only acts when the token still matches, so a replaced
+    /// toast's timer can never fire.
     @discardableResult
     func upsert(_ p: NotifyPayload) -> UUID {
         let token = UUID()
@@ -45,7 +48,7 @@ final class ReminderStore {
             timestamp: p.timestamp,
             phase: .toasting(token: token)
         )
-        items.removeAll { $0.sessionUUID == p.sessionUUID }
+        items.removeAll { $0.identity.key == item.identity.key }
         items.insert(item, at: 0)
         return token
     }
@@ -54,6 +57,15 @@ final class ReminderStore {
         guard let i = items.firstIndex(where: { $0.sessionUUID == sessionUUID }),
               items[i].phase == .toasting(token: token) else { return }
         items[i].phase = .queued
+    }
+
+    /// Drop a still-toasting item — used when its iTerm2 session is not
+    /// findable, so it never becomes a tab. Token-guarded like `queueIfCurrent`
+    /// so a newer toast that replaced it is never removed by a stale timer.
+    func removeIfCurrent(sessionUUID: String, token: UUID) {
+        guard let i = items.firstIndex(where: { $0.sessionUUID == sessionUUID }),
+              items[i].phase == .toasting(token: token) else { return }
+        items.remove(at: i)
     }
 
     func remove(sessionUUID: String) {

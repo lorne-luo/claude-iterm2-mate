@@ -9,6 +9,10 @@ struct ReminderIdentity: Equatable {
     static let paletteCount = 12
     static let defaultGlyph = "●"
 
+    /// Full base path (`repoRoot` if present, else `cwd`). Uniquely identifies a
+    /// project for dedup — unlike `project` (a basename), which can collide
+    /// across unrelated repos that share a folder name.
+    let key: String
     let project: String
     let worktreeGlyph: String
     let colorIndex: Int
@@ -19,6 +23,7 @@ struct ReminderIdentity: Equatable {
 
     init(repoRoot: String?, branch: String?, cwd: String) {
         let base = ReminderIdentity.nonEmpty(repoRoot) ?? cwd
+        key = base
         project = (base as NSString).lastPathComponent
         worktreeGlyph = ReminderIdentity.glyph(for: branch)
         colorIndex = Int(ReminderIdentity.stableHash(base) % UInt64(ReminderIdentity.paletteCount))

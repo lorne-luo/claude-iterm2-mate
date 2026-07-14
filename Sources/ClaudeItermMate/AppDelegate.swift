@@ -13,16 +13,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel())
         coordinator.onActivate = { [weak self] item in self?.activate(item) }
-        menuBar = MenuBarController(
-            store: store,
-            focusAvailable: focusAction.canFocus
-        )
+        menuBar = MenuBarController(focusAvailable: focusAction.canFocus)
         tabStrip = TabStripPanel(
             store: store,
             onClick: { [weak self] item in self?.activate(item) },
             onHover: { [weak self] item, tabFrame in
                 self?.detail.hoverChanged(item: item, tabFrame: tabFrame)
-            }
+            },
+            onClearAll: { [weak self] in self?.store.removeAll() }
         )
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
