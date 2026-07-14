@@ -3,14 +3,12 @@ import ServiceManagement
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
-    private let store: ReminderStore
     private let focusAvailable: Bool
     private var statusItem: NSStatusItem!
     private var serverError: String?
     private let menu = NSMenu()
 
-    init(store: ReminderStore, focusAvailable: Bool) {
-        self.store = store
+    init(focusAvailable: Bool) {
         self.focusAvailable = focusAvailable
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -102,11 +100,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(status)
         menu.addItem(.separator())
 
-        let clear = NSMenuItem(title: "Clear All Tabs", action: #selector(clearAll), keyEquivalent: "")
-        clear.target = self
-        clear.isEnabled = installed
-        clear.image = symbol("trash")
-        menu.addItem(clear)
         let maximize = NSMenuItem(title: "Maximize Pane on Click", action: #selector(toggleMaximize(_:)), keyEquivalent: "")
         maximize.target = self
         maximize.state = ItermFocusAction.maximizeOnClick ? .on : .off
@@ -168,10 +161,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", "display notification \"\(safe)\" with title \"Claude iTerm2 Mate\""]
         try? p.run()
-    }
-
-    @objc private func clearAll() {
-        store.removeAll()
     }
 
     @objc private func toggleMaximize(_ sender: NSMenuItem) {

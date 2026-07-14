@@ -7,6 +7,8 @@ enum EdgeGeometry {
     static let tabHeight: CGFloat = 64
     static let tabSpacing: CGFloat = 8
     static let screenMargin: CGFloat = 12
+    /// The square "close all" tab pinned below the strip.
+    static let closerSize: CGFloat = 28
     static let toastSize = CGSize(width: 440, height: 156)
 
     static func maxVisibleTabs(visible: CGRect) -> Int {
@@ -14,9 +16,10 @@ enum EdgeGeometry {
         return max(1, Int((usable + tabSpacing) / (tabHeight + tabSpacing)))
     }
 
-    static func stripFrame(tabCount: Int, visible: CGRect) -> CGRect {
+    static func stripFrame(tabCount: Int, hasCloser: Bool = false, visible: CGRect) -> CGRect {
         let count = min(max(tabCount, 0), maxVisibleTabs(visible: visible))
-        let height = CGFloat(count) * tabHeight + CGFloat(max(0, count - 1)) * tabSpacing
+        var height = CGFloat(count) * tabHeight + CGFloat(max(0, count - 1)) * tabSpacing
+        if hasCloser { height += closerSize + tabSpacing }
         let y = min(
             max(visible.midY - height / 2, visible.minY + screenMargin),
             visible.maxY - height - screenMargin

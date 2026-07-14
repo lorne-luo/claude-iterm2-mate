@@ -12,6 +12,13 @@ final class EdgeGeometryTests: XCTestCase {
         XCTAssertEqual(f.midY, visible.midY, accuracy: 0.5)
     }
 
+    func testStripFrameWithCloserAddsCloserHeight() {
+        let without = EdgeGeometry.stripFrame(tabCount: 2, hasCloser: false, visible: visible)
+        let with = EdgeGeometry.stripFrame(tabCount: 2, hasCloser: true, visible: visible)
+        XCTAssertEqual(with.height - without.height, EdgeGeometry.closerSize + EdgeGeometry.tabSpacing, accuracy: 0.01)
+        XCTAssertEqual(with.width, EdgeGeometry.tabWidth)
+    }
+
     func testStripFrameClampsToVisibleHeight() {
         let f = EdgeGeometry.stripFrame(tabCount: 100, visible: visible)
         XCTAssertGreaterThanOrEqual(f.minY, visible.minY + EdgeGeometry.screenMargin)
