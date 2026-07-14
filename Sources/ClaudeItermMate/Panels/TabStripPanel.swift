@@ -27,7 +27,7 @@ final class TabStripPanel {
         withObservationTracking {
             _ = store.items
         } onChange: { [weak self] in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.render()
                 self?.observe()
             }

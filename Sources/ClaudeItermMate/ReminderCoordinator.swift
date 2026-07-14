@@ -48,7 +48,7 @@ final class ReminderCoordinator {
         let probe = self.probe
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let findable = probe.canFind(p.sessionUUID)
-            DispatchQueue.main.async { self?.present(p, findable: findable) }
+            DispatchQueue.main.async { [weak self] in self?.present(p, findable: findable) }
         }
     }
 
