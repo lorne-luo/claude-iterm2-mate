@@ -15,8 +15,8 @@ final class ToastPanel: ToastPanelProtocol {
 
     static let width: CGFloat = 440
     static let minHeight: CGFloat = 56
-    /// Caps a long (6-line) message; short ones size down naturally.
-    static let maxHeight: CGFloat = 240
+    /// Caps a long (10-line) message; short ones size down naturally.
+    static let maxHeight: CGFloat = 360
 
     func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
@@ -135,7 +135,7 @@ struct ToastView: View {
                 Text(item.fullMessage)
                     .font(.system(size: 12))
                     .foregroundStyle(.primary)
-                    .lineLimit(6)
+                    .lineLimit(10)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
