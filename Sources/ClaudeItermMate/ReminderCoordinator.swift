@@ -63,13 +63,9 @@ final class ReminderCoordinator {
     func handle(_ p: NotifyPayload) {
         if p.isSessionStart {
             // Color-injection trigger, not a reminder: assign (or look up) the
-            // project's color and lighten level now — session-start order also
-            // fixes worktree tint order — then hand off to the injector.
+            // project's color now, then hand off to the injector.
             let identity = ReminderIdentity(repoRoot: p.repoRoot, branch: p.branch, cwd: p.cwd)
             let name = store.assigner.colorName(for: identity.key)
-            _ = store.assigner.lightenLevel(
-                for: identity.key, branch: p.branch, isWorktree: p.isWorktree, cwd: p.cwd
-            )
             onSessionStart?(p.sessionUUID, name)
             return
         }

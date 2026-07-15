@@ -4,11 +4,12 @@ import XCTest
 final class ReminderStoreTests: XCTestCase {
     private func payload(
         session: String = "S1", summary: String = "hi",
-        repoRoot: String = "/tmp/proj", branch: String? = nil
+        repoRoot: String = "/tmp/proj", branch: String? = nil,
+        timestamp: Double = 1.0
     ) -> NotifyPayload {
         var obj: [String: Any] = [
             "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
-            "summary": summary, "full_message": summary, "timestamp": 1.0,
+            "summary": summary, "full_message": summary, "timestamp": timestamp,
             "repo_root": repoRoot,
         ]
         if let branch { obj["branch"] = branch }
@@ -40,14 +41,46 @@ final class ReminderStoreTests: XCTestCase {
         XCTAssertEqual(store.items[0].summary, "second")
     }
 
-    func testUpsertDedupsByProjectAndLaterReplacesEarlier() {
+    func testUpsertDedupsBySessionAndLaterReplacesEarlier() {
+        let store = ReminderStore()
+        _ = store.upsert(payload(session: "S1", summary: "first", repoRoot: "/tmp/proj"))
+        _ = store.upsert(payload(session: "S1", summary: "second", repoRoot: "/tmp/proj"))
+        // Same session → one tab, carrying the later message.
+        XCTAssertEqual(store.items.count, 1)
+        XCTAssertEqual(store.items[0].sessionUUID, "S1")
+        XCTAssertEqual(store.items[0].summary, "second")
+    }
+
+    func testConcurrentSessionsInSameDirGetSeparateTabs() {
         let store = ReminderStore()
         _ = store.upsert(payload(session: "S1", summary: "first", repoRoot: "/tmp/proj"))
         _ = store.upsert(payload(session: "S2", summary: "second", repoRoot: "/tmp/proj"))
-        // Same project, different session → one tab, carrying the later message.
-        XCTAssertEqual(store.items.count, 1)
-        XCTAssertEqual(store.items[0].sessionUUID, "S2")
-        XCTAssertEqual(store.items[0].summary, "second")
+        // Different sessions in the same directory each keep a tab.
+        XCTAssertEqual(store.items.count, 2)
+        XCTAssertEqual(Set(store.items.map(\.sessionUUID)), ["S1", "S2"])
+    }
+
+    func testSameDirSiblingsGetIncrementalLightenLevelsAndRecompactOnRemove() {
+        let store = ReminderStore()
+        _ = store.upsert(payload(session: "S1", repoRoot: "/tmp/proj", timestamp: 1.0))
+        _ = store.upsert(payload(session: "S2", repoRoot: "/tmp/proj", timestamp: 2.0))
+        _ = store.upsert(payload(session: "S3", repoRoot: "/tmp/proj", timestamp: 3.0))
+        // Oldest keeps the base color; each newer one is one step lighter.
+        func level(_ s: String) -> Int { store.items.first { $0.sessionUUID == s }!.lightenLevel }
+        XCTAssertEqual(level("S1"), 0)
+        XCTAssertEqual(level("S2"), 1)
+        XCTAssertEqual(level("S3"), 2)
+        // Removing the oldest recompacts survivors toward the base shade.
+        store.remove(sessionUUID: "S1")
+        XCTAssertEqual(level("S2"), 0)
+        XCTAssertEqual(level("S3"), 1)
+    }
+
+    func testDifferentDirsEachStartAtBaseLevel() {
+        let store = ReminderStore()
+        _ = store.upsert(payload(session: "S1", repoRoot: "/tmp/alpha"))
+        _ = store.upsert(payload(session: "S2", repoRoot: "/tmp/beta"))
+        XCTAssertEqual(store.items.map(\.lightenLevel), [0, 0])
     }
 
     func testDifferentProjectsKeepSeparateTabs() {

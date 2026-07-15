@@ -48,12 +48,12 @@ final class ReminderStore {
 
     var queued: [ReminderItem] { items.filter { $0.phase == .queued } }
 
-    /// Insert or update the reminder for a project and start a new toast
-    /// cycle. Dedup is by project path (`identity.key`): a later message for
-    /// the same project removes the earlier tab and inserts the new one at the
-    /// top, so a project has at most one tab. Returns the toast token;
-    /// `queueIfCurrent` only acts when the token still matches, so a replaced
-    /// toast's timer can never fire.
+    /// Insert or update the reminder for a session and start a new toast
+    /// cycle. Dedup is by session UUID: a later message for the same session
+    /// replaces its own tab, but concurrent sessions in the same directory
+    /// each keep a tab, distinguished by lighten level. Returns the toast
+    /// token; `queueIfCurrent` only acts when the token still matches, so a
+    /// replaced toast's timer can never fire.
     @discardableResult
     func upsert(_ p: NotifyPayload) -> UUID {
         let token = UUID()
@@ -69,14 +69,30 @@ final class ReminderStore {
             timestamp: p.timestamp,
             phase: .toasting(token: token),
             colorIndex: assigner.colorIndex(for: identity.key),
-            lightenLevel: assigner.lightenLevel(
-                for: identity.key, branch: p.branch, isWorktree: p.isWorktree, cwd: p.cwd
-            ),
+            lightenLevel: 0,
             focusable: p.focusable
         )
-        items.removeAll { $0.identity.key == item.identity.key }
+        items.removeAll { $0.sessionUUID == p.sessionUUID }
         items.insert(item, at: 0)
+        reassignLightenLevels()
         return token
+    }
+
+    /// Siblings sharing a base color (same `identity.key`) get incremental
+    /// lighten levels so concurrent same-directory sessions are
+    /// distinguishable. Ordered by `(timestamp, sessionUUID)` ascending, the
+    /// oldest session keeps the base color (level 0) and each newer one is one
+    /// step lighter. Computed over all items so a toasting newcomer's shade is
+    /// fixed before it becomes a tab and existing tabs never shift. Levels
+    /// beyond the palette's factor table clamp in `ReminderPalette.components`.
+    private func reassignLightenLevels() {
+        let groups = Dictionary(grouping: items.indices) { items[$0].identity.key }
+        for (_, idxs) in groups {
+            let ordered = idxs.sorted {
+                (items[$0].timestamp, items[$0].sessionUUID) < (items[$1].timestamp, items[$1].sessionUUID)
+            }
+            for (level, i) in ordered.enumerated() { items[i].lightenLevel = level }
+        }
     }
 
     func queueIfCurrent(sessionUUID: String, token: UUID) {
@@ -92,10 +108,12 @@ final class ReminderStore {
         guard let i = items.firstIndex(where: { $0.sessionUUID == sessionUUID }),
               items[i].phase == .toasting(token: token) else { return }
         items.remove(at: i)
+        reassignLightenLevels()
     }
 
     func remove(sessionUUID: String) {
         items.removeAll { $0.sessionUUID == sessionUUID }
+        reassignLightenLevels()
     }
 
     func removeAll() {

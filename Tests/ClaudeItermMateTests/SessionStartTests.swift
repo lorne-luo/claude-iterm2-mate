@@ -75,23 +75,20 @@ final class SessionStartTests: XCTestCase {
     }
 
     @MainActor
-    func testWorktreeSessionStartRegistersLightenOrder() {
+    func testSessionStartDoesNotSetLightenLevel() {
         let store = ReminderStore()
         let coordinator = ReminderCoordinator(store: store, toastPanel: nil)
         coordinator.onSessionStart = { _, _ in }
 
-        var wt = sessionStartJSON
-        wt["session_uuid"] = "S2"
-        wt["cwd"] = "/x/proj-wt-a"
-        wt["branch"] = "feat/a"
-        wt["is_worktree"] = true
-        coordinator.handle(payload(wt)!)
+        // session_start injects a color but registers no tab, so a lone stop-path
+        // session in the same directory renders at the base level (0). The color
+        // slot still matches the assigner.
+        coordinator.handle(payload(sessionStartJSON)!)
 
-        // The stop-path item for the same worktree reuses the level registered
-        // at session start (1 = first worktree of this repo).
-        wt.removeValue(forKey: "type")
-        store.upsert(payload(wt)!)
-        XCTAssertEqual(store.items[0].lightenLevel, 1)
+        var stopJSON = sessionStartJSON
+        stopJSON.removeValue(forKey: "type")
+        store.upsert(payload(stopJSON)!)
+        XCTAssertEqual(store.items[0].lightenLevel, 0)
         XCTAssertEqual(store.items[0].colorIndex, store.assigner.colorIndex(for: "/x/proj"))
     }
 

@@ -62,28 +62,4 @@ final class ColorAssignerTests: XCTestCase {
         let idx = a.colorIndex(for: "/x/proj")
         XCTAssertEqual(a.colorName(for: "/x/proj"), ReminderPalette.names[idx])
     }
-
-    func testMainWorkingTreeIsLevelZero() {
-        let a = ColorAssigner()
-        XCTAssertEqual(a.lightenLevel(for: "/x/proj", branch: "main", isWorktree: false, cwd: "/x/proj"), 0)
-        XCTAssertEqual(a.lightenLevel(for: "/x/proj", branch: "feat/a", isWorktree: false, cwd: "/x/proj"), 0)
-    }
-
-    func testWorktreesGetIncreasingLevelsAndKeepThem() {
-        let a = ColorAssigner()
-        let key = "/x/proj"
-        XCTAssertEqual(a.lightenLevel(for: key, branch: "feat/a", isWorktree: true, cwd: "/wt/a"), 1)
-        XCTAssertEqual(a.lightenLevel(for: key, branch: "feat/b", isWorktree: true, cwd: "/wt/b"), 2)
-        // Same branch keeps its level; a different repo starts from 1 again.
-        XCTAssertEqual(a.lightenLevel(for: key, branch: "feat/a", isWorktree: true, cwd: "/wt/a"), 1)
-        XCTAssertEqual(a.lightenLevel(for: "/other", branch: "feat/a", isWorktree: true, cwd: "/wt/o"), 1)
-    }
-
-    func testWorktreeWithoutBranchFallsBackToCwd() {
-        let a = ColorAssigner()
-        let key = "/x/proj"
-        XCTAssertEqual(a.lightenLevel(for: key, branch: nil, isWorktree: true, cwd: "/wt/a"), 1)
-        XCTAssertEqual(a.lightenLevel(for: key, branch: nil, isWorktree: true, cwd: "/wt/a"), 1)
-        XCTAssertEqual(a.lightenLevel(for: key, branch: nil, isWorktree: true, cwd: "/wt/b"), 2)
-    }
 }
