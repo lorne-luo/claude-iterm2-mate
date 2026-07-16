@@ -198,4 +198,39 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
         XCTAssertEqual(toast.hideIntoTab, [true], "became a tab → shrink into the strip")
     }
+
+    private func sessionStartPayload(session: String = "S1", repoRoot: String = "/tmp/proj") -> NotifyPayload {
+        NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
+            "type": "session_start", "source": "startup",
+            "session_uuid": session, "cwd": repoRoot, "title": "", "summary": "",
+            "full_message": "", "timestamp": 1.0, "repo_root": repoRoot,
+        ]))!
+    }
+
+    func testReminderTriggersUsageRefresh() async throws {
+        let toast = SpyToast()
+        let usage = UsageService(minInterval: 60, hudCachePath: "/nonexistent",
+                                 now: { Date() },
+                                 fetch: { _ in UsageSnapshot(
+                                     fiveHour: UsageWindow(utilization: 55, resetsAt: nil),
+                                     weekly: nil, weeklyOpus: nil) })
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastDuration: 10,
+                                              toastPanel: toast, probe: StubProbe(findable: true),
+                                              usage: usage)
+        coordinator.handle(payload())
+        try await settle()
+        try await Task.sleep(for: .milliseconds(50)) // let the fire-and-forget fetch land
+        XCTAssertEqual(usage.snapshot?.fiveHour?.utilization, 55)
+    }
+
+    func testSessionStartProbesHudCache() {
+        let path = NSTemporaryDirectory() + "coord-probe-\(UUID().uuidString).json"
+        FileManager.default.createFile(atPath: path, contents: Data("{}".utf8))
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let usage = UsageService(hudCachePath: path, fetch: { _ in nil })
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastPanel: nil, usage: usage)
+        coordinator.onSessionStart = { _, _ in }
+        coordinator.handle(sessionStartPayload())
+        XCTAssertTrue(usage.hudCacheAvailable, "session_start must probe the hud cache")
+    }
 }
