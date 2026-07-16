@@ -48,7 +48,7 @@ enum KeychainReader {
         p.arguments = ["find-generic-password", "-s", service, "-w"]
         let pipe = Pipe()
         p.standardOutput = pipe
-        p.standardError = Pipe()
+        p.standardError = FileHandle.nullDevice
         do {
             try p.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
