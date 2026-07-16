@@ -127,15 +127,9 @@ struct ToastView: View {
         return prefix + branch.prefix(room) + "…"
     }
 
-    /// `5h N% · 7d N%` from the current snapshot, or nil when there is no data
-    /// yet — the title row then renders exactly as before.
-    private var usageBadge: String? {
-        guard let s = usage?.snapshot else { return nil }
-        var parts: [String] = []
-        if let f = s.fiveHour { parts.append("5h \(f.utilization)%") }
-        if let w = s.weekly { parts.append("7d \(w.utilization)%") }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
+    /// Live badge string from the current in-memory snapshot, or nil when there
+    /// is no data yet — the title row then renders exactly as before.
+    private var usageBadge: String? { usage?.snapshot?.badgeText }
 
     /// A small circular control (minimize / close) in the toast's top-right.
     /// `.buttonStyle(.plain)` keeps the tap from bubbling to the card's

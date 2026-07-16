@@ -58,6 +58,18 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertNotNil(UsageSnapshot.parseDate("2026-07-16T15:09:59Z"))
     }
 
+    func testBadgeText() {
+        func win(_ u: Int) -> UsageWindow { UsageWindow(utilization: u, resetsAt: nil) }
+        XCTAssertEqual(
+            UsageSnapshot(fiveHour: win(63), weekly: win(12), weeklyOpus: nil).badgeText,
+            "5h 63% · 7d 12%")
+        XCTAssertEqual(
+            UsageSnapshot(fiveHour: win(63), weekly: nil, weeklyOpus: nil).badgeText, "5h 63%")
+        XCTAssertEqual(
+            UsageSnapshot(fiveHour: nil, weekly: win(12), weeklyOpus: nil).badgeText, "7d 12%")
+        XCTAssertNil(UsageSnapshot(fiveHour: nil, weekly: nil, weeklyOpus: nil).badgeText)
+    }
+
     func testDecodeRawApiWithOnlyFiveHour() throws {
         let body = """
         {"five_hour":{"utilization":50,"resets_at":"2026-07-16T15:09:59.807Z"}}

@@ -7,6 +7,11 @@ final class DetailPanel {
     private var showWork: DispatchWorkItem?
     private var hideWork: DispatchWorkItem?
     private var mouseInsideDetail = false
+    private let usage: UsageService?
+
+    init(usage: UsageService? = nil) {
+        self.usage = usage
+    }
 
     /// Invoked when the popup's close button is clicked — remove the tab.
     var onClose: ((ReminderItem) -> Void)?
@@ -40,6 +45,7 @@ final class DetailPanel {
         self.panel = panel
         panel.contentViewController = NSHostingController(rootView: DetailView(
             item: item,
+            usage: usage,
             onHoverChanged: { [weak self] inside in
                 self?.mouseInsideDetail = inside
                 if inside { self?.hideWork?.cancel() } else { self?.scheduleHide() }
@@ -80,11 +86,19 @@ final class DetailPanel {
 
 struct DetailView: View {
     let item: ReminderItem
+    /// The in-memory usage store; the header reads its latest snapshot each time
+    /// the detail is shown (a fresh DetailView per hover) and live-updates via
+    /// Observation. nil in the height-measuring probe.
+    var usage: UsageService? = nil
     /// true: message scrolls within the (clamped) panel. false: natural
     /// height, used only to measure the content.
     var scrolls: Bool = true
     var onHoverChanged: (Bool) -> Void = { _ in }
     var onClose: () -> Void = {}
+
+    /// Live `5h N% · 7d N%` from the current in-memory snapshot, or nil when
+    /// there is no data yet (the header then omits the badge).
+    private var usageBadge: String? { usage?.snapshot?.badgeText }
 
     /// Static "2 minutes ago" snapshot computed when the card opens — unlike
     /// SwiftUI's `.relative` style it does not tick like a countdown. Within
@@ -107,7 +121,14 @@ struct DetailView: View {
                 HStack(spacing: 8) {
                     Text(item.projectName)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    Spacer()
+                    Spacer(minLength: 4)
+                    if let badge = usageBadge {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
                     Text(Self.relativeTime(item.timestamp))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)

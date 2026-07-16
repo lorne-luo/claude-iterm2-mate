@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var coordinator: ReminderCoordinator!
     private var server: NotifyServer?
     private var tabStrip: TabStripPanel?
-    private let detail = DetailPanel()
+    private lazy var detail = DetailPanel(usage: usage)
     private let focusAction = ItermFocusAction()
     private let colorAction = ItermColorAction()
     private var menuBar: MenuBarController?

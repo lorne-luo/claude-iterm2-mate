@@ -15,6 +15,16 @@ struct UsageSnapshot: Equatable {
     let weekly: UsageWindow?
     let weeklyOpus: UsageWindow?
 
+    /// Compact `5h N% · 7d N%` label for the toast/detail title rows, or nil
+    /// when neither window has data (callers then render no badge). weeklyOpus
+    /// is intentionally not shown.
+    var badgeText: String? {
+        var parts: [String] = []
+        if let fiveHour { parts.append("5h \(fiveHour.utilization)%") }
+        if let weekly { parts.append("7d \(weekly.utilization)%") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// Decode from the raw API response body. Pure/testable.
     static func decode(_ data: Data) throws -> UsageSnapshot {
         let raw = try JSONDecoder().decode(RawResponse.self, from: data)
