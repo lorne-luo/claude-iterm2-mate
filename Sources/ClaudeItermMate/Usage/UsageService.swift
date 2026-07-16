@@ -17,7 +17,9 @@ final class UsageService {
     private let now: () -> Date
     private let fetch: (_ preferHud: Bool) async -> UsageSnapshot?
 
-    static let defaultHudCachePath =
+    // `nonisolated` so it can be used as an init default-argument value from a
+    // nonisolated context (a plain constant needs no main-actor isolation).
+    nonisolated static let defaultHudCachePath =
         NSString(string: "~/.claude/plugins/claude-hud/.usage-cache.json").expandingTildeInPath
 
     init(minInterval: TimeInterval = 60,
