@@ -65,10 +65,16 @@ final class UsageService {
     /// Keychain); false → self-fetch from the OAuth usage API.
     static func defaultFetch(preferHud: Bool, hudCachePath: String) async -> UsageSnapshot? {
         if preferHud {
-            guard let data = try? Data(contentsOf: URL(fileURLWithPath: hudCachePath)) else { return nil }
-            return UsageSnapshot.decodeHudCache(data)
+            // Data(contentsOf:) is a synchronous disk read — run it off the main
+            // actor so the once-per-minute refresh never hitches the UI.
+            return await Task.detached {
+                guard let data = try? Data(contentsOf: URL(fileURLWithPath: hudCachePath)) else { return nil }
+                return UsageSnapshot.decodeHudCache(data)
+            }.value
         }
-        guard let token = KeychainReader.readToken() else { return nil }
+        // KeychainReader.readToken() forks `security` and blocks on
+        // waitUntilExit(); run it off the main actor for the same reason.
+        guard let token = await Task.detached(operation: { KeychainReader.readToken() }).value else { return nil }
         return await fetchFromApi(token: token)
     }
 
