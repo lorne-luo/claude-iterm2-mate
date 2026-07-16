@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = ReminderStore()
+    private let usage = UsageService()
     private(set) var coordinator: ReminderCoordinator!
     private var server: NotifyServer?
     private var tabStrip: TabStripPanel?
@@ -12,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel())
+        coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel(usage: usage), usage: usage)
         coordinator.onActivate = { [weak self] item in self?.activate(item) }
         coordinator.isNonItermEnabled = { AppSettings.showNonIterm }
         coordinator.onNotify = { [weak self] title, body in self?.desktopNotify(title: title, body: body) }
