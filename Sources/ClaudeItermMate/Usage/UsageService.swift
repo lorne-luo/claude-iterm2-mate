@@ -47,7 +47,8 @@ final class UsageService {
         return now.timeIntervalSince(last) >= minInterval
     }
 
-    /// If the rate-limit allows, stamp the attempt and launch a detached fetch.
+    /// If the rate-limit allows, stamp the attempt and launch the fetch (its
+    /// blocking IO runs off the main actor inside defaultFetch).
     /// Returns the launched `Task` (nil when gated) so callers/tests can await
     /// completion; production callers ignore it (fire-and-forget). A nil result
     /// keeps the previous snapshot.

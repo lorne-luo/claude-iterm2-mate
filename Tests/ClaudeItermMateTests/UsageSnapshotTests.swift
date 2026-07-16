@@ -40,4 +40,31 @@ final class UsageSnapshotTests: XCTestCase {
     func testDecodeHudCacheMalformedIsNil() {
         XCTAssertNil(UsageSnapshot.decodeHudCache(Data("not json".utf8)))
     }
+
+    func testClampHandlesNilNaNInfinityAndRange() {
+        XCTAssertEqual(UsageSnapshot.clamp(nil), 0)
+        XCTAssertEqual(UsageSnapshot.clamp(Double.nan), 0)
+        XCTAssertEqual(UsageSnapshot.clamp(Double.infinity), 0)
+        XCTAssertEqual(UsageSnapshot.clamp(-5), 0)
+        XCTAssertEqual(UsageSnapshot.clamp(150), 100)
+        XCTAssertEqual(UsageSnapshot.clamp(63.4), 63)
+    }
+
+    func testParseDateRejectsInvalidAndAcceptsBothIsoForms() {
+        XCTAssertNil(UsageSnapshot.parseDate(nil))
+        XCTAssertNil(UsageSnapshot.parseDate(""))
+        XCTAssertNil(UsageSnapshot.parseDate("not-a-date"))
+        XCTAssertNotNil(UsageSnapshot.parseDate("2026-07-16T15:09:59.807Z"))
+        XCTAssertNotNil(UsageSnapshot.parseDate("2026-07-16T15:09:59Z"))
+    }
+
+    func testDecodeRawApiWithOnlyFiveHour() throws {
+        let body = """
+        {"five_hour":{"utilization":50,"resets_at":"2026-07-16T15:09:59.807Z"}}
+        """.data(using: .utf8)!
+        let snap = try UsageSnapshot.decode(body)
+        XCTAssertEqual(snap.fiveHour?.utilization, 50)
+        XCTAssertNil(snap.weekly)
+        XCTAssertNil(snap.weeklyOpus)
+    }
 }

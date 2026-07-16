@@ -47,4 +47,12 @@ final class KeychainReaderTests: XCTestCase {
     func testReadTokenNilWhenSecurityFails() {
         XCTAssertNil(KeychainReader.readToken(now: now, runSecurity: { nil }))
     }
+
+    func testExpiresAtExactlyNowIsNil() {
+        // expiresAt == now (in ms) must be treated as expired (<=).
+        let json = """
+        {"claudeAiOauth":{"accessToken":"tok-123","expiresAt":1000000000}}
+        """.data(using: .utf8)! // 1e9 ms == now (1_000_000 s)
+        XCTAssertNil(KeychainReader.parseAccessToken(json: json, now: now))
+    }
 }
