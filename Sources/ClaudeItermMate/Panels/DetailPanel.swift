@@ -38,7 +38,7 @@ final class DetailPanel {
     private func show(item: ReminderItem, tabFrame: CGRect) {
         let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let maxHeight = visible.height * Self.maxHeightFraction
-        let height = Self.fittingHeight(item: item, width: Self.width, maxHeight: maxHeight)
+        let height = Self.fittingHeight(item: item, usage: usage, width: Self.width, maxHeight: maxHeight)
         let size = CGSize(width: Self.width, height: height)
         let frame = EdgeGeometry.detailFrame(anchoring: tabFrame, size: size, visible: visible)
         let panel = self.panel ?? PanelFactory.makePanel(frame: frame, canBecomeKey: true)
@@ -66,8 +66,8 @@ final class DetailPanel {
     /// Measure the card's natural height at the given width using a
     /// non-scrolling layout, clamped to [minHeight, maxHeight]. Short messages
     /// yield a compact panel; long ones cap out and scroll.
-    private static func fittingHeight(item: ReminderItem, width: CGFloat, maxHeight: CGFloat) -> CGFloat {
-        let probe = NSHostingView(rootView: DetailView(item: item, scrolls: false).frame(width: width))
+    private static func fittingHeight(item: ReminderItem, usage: UsageService?, width: CGFloat, maxHeight: CGFloat) -> CGFloat {
+        let probe = NSHostingView(rootView: DetailView(item: item, usage: usage, scrolls: false).frame(width: width))
         probe.layoutSubtreeIfNeeded()
         let natural = probe.fittingSize.height
         return min(max(natural, minHeight), maxHeight)
@@ -110,7 +110,10 @@ struct DetailView: View {
         if elapsed < 10 { return "just now" }
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .full
+        // Abbreviate only the seconds unit ("10 seconds ago" → "10 secs ago");
+        // other units keep their full spelling.
         return f.localizedString(for: date, relativeTo: Date())
+            .replacingOccurrences(of: "seconds", with: "secs")
     }
 
     var body: some View {
@@ -121,14 +124,7 @@ struct DetailView: View {
                 HStack(spacing: 8) {
                     Text(item.projectName)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    Spacer(minLength: 4)
-                    if let badge = usageBadge {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
+                    Spacer()
                     Text(Self.relativeTime(item.timestamp))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -143,10 +139,24 @@ struct DetailView: View {
                     .help("Close")
                     .accessibilityLabel("Close")
                 }
-                if let label = item.branchLabel {
-                    Label(label, systemImage: item.isWorktree ? "folder" : "arrow.triangle.branch")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                // Second row: branch on the left, usage badge right-aligned.
+                // Rendered whenever either is present.
+                if item.branchLabel != nil || usageBadge != nil {
+                    HStack(spacing: 8) {
+                        if let label = item.branchLabel {
+                            Label(label, systemImage: item.isWorktree ? "folder" : "arrow.triangle.branch")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 4)
+                        if let badge = usageBadge {
+                            Text(badge)
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 16)
