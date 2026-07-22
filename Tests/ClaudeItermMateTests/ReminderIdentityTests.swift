@@ -75,17 +75,17 @@ final class ReminderIdentityTests: XCTestCase {
     // MARK: toast title
 
     func testToastTitleIncludesBranchWhenItFits() {
-        XCTAssertEqual(ToastView.title(project: "myproj", branch: "main"), "[CC] myproj · main")
+        XCTAssertEqual(ToastView.title(project: "myproj", branch: "main"), "myproj · main")
     }
 
     func testToastTitleOmitsBranchWhenNil() {
-        XCTAssertEqual(ToastView.title(project: "myproj", branch: nil), "[CC] myproj")
+        XCTAssertEqual(ToastView.title(project: "myproj", branch: nil), "myproj")
     }
 
     func testToastTitleTruncatesOverlongBranch() {
         let title = ToastView.title(project: "myproj", branch: "feature/an-extremely-long-branch-name-that-overflows-the-toast-width")
         XCTAssertLessThanOrEqual(title.count, ToastView.titleBudget)
-        XCTAssertTrue(title.hasPrefix("[CC] myproj · "), "project part must be preserved")
+        XCTAssertTrue(title.hasPrefix("myproj · "), "project part must be preserved")
     }
 
     // MARK: location label (branch name vs worktree path)

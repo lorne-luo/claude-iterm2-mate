@@ -113,11 +113,11 @@ struct ToastView: View {
     /// Character budget for the toast title at 360pt / 13pt semibold.
     static let titleBudget = 42
 
-    /// `[CC] project · branch` when it fits within `titleBudget`; otherwise the
+    /// `project · branch` when it fits within `titleBudget`; otherwise the
     /// branch is truncated (with an ellipsis), and dropped entirely if even the
     /// project alone leaves no room.
     static func title(project: String, branch: String?) -> String {
-        let base = "[CC] \(project)"
+        let base = project
         guard let branch, !branch.isEmpty else { return base }
         let full = "\(base) · \(branch)"
         if full.count <= titleBudget { return full }

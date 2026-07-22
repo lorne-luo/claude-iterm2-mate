@@ -104,7 +104,7 @@ function main(raw) {
   const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd();
   if (path.basename(cwd) === "observer-sessions") return;
 
-  const title = `[CC] ${path.basename(cwd)}`;
+  const title = path.basename(cwd);
   const summary = extractSummary(message);
 
   const itermSession = process.env.ITERM_SESSION_ID;
