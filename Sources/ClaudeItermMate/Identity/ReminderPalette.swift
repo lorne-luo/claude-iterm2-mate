@@ -26,6 +26,11 @@ enum ReminderPalette {
 
     static let colors: [Color] = rgb.map { Color(.sRGB, red: $0.r, green: $0.g, blue: $0.b) }
 
+    /// Attention accent for a **waiting** tab/toast: bright white. Deliberately
+    /// NOT a palette slot — it must not shift `paletteCount` or the `/color` name
+    /// mapping. Rendered as a breathing glow on top of the project color.
+    static let waitingAccent = Color.white
+
     /// The `/color` name rendered at a (wrapped) palette index.
     static func colorName(at index: Int) -> String { names[wrap(index)] }
 

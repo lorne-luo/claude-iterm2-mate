@@ -23,6 +23,10 @@ struct NotifyPayload: Codable, Equatable {
     // False for non-iTerm2 sessions: the app shows a dismiss-only tab (no pane
     // to jump to). Absent -> true (iTerm2 sessions, backward compatible).
     let focusable: Bool
+    // "waiting" when the session needs the user to act (permission prompt, or a
+    // Stop whose reply ends in a question); absent / anything else -> completed.
+    // Backward compatible: old payloads without this field decode as completed.
+    let status: String?
 
     enum CodingKeys: String, CodingKey {
         case sessionUUID = "session_uuid"
@@ -32,7 +36,7 @@ struct NotifyPayload: Codable, Equatable {
         case repoRoot = "repo_root"
         case branch
         case isWorktree = "is_worktree"
-        case type, source, focusable
+        case type, source, focusable, status
     }
 
     init(from decoder: Decoder) throws {
@@ -49,11 +53,15 @@ struct NotifyPayload: Codable, Equatable {
         type = try c.decodeIfPresent(String.self, forKey: .type)
         source = try c.decodeIfPresent(String.self, forKey: .source)
         focusable = try c.decodeIfPresent(Bool.self, forKey: .focusable) ?? true
+        status = try c.decodeIfPresent(String.self, forKey: .status)
     }
 
     var projectName: String { (cwd as NSString).lastPathComponent }
 
     var isSessionStart: Bool { type == "session_start" }
+
+    /// Parsed status; absent / unknown -> `.completed` (backward compatible).
+    var sessionStatus: SessionStatus { SessionStatus(wire: status) }
 
     static func decode(_ data: Data) -> NotifyPayload? {
         guard data.count <= maxPayloadBytes else { return nil }

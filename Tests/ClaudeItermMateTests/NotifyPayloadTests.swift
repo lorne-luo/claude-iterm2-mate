@@ -40,6 +40,28 @@ final class NotifyPayloadTests: XCTestCase {
         XCTAssertEqual(p?.isWorktree, true)
     }
 
+    func testStatusAbsentDecodesAsCompleted() {
+        let p = NotifyPayload.decode(json())
+        XCTAssertNil(p?.status)
+        XCTAssertEqual(p?.sessionStatus, .completed)
+    }
+
+    func testStatusWaitingDecodes() {
+        let p = NotifyPayload.decode(json(["status": "waiting"]))
+        XCTAssertEqual(p?.status, "waiting")
+        XCTAssertEqual(p?.sessionStatus, .waiting)
+    }
+
+    func testStatusUnknownValueDecodesAsCompleted() {
+        let p = NotifyPayload.decode(json(["status": "bogus"]))
+        XCTAssertEqual(p?.sessionStatus, .completed)
+    }
+
+    func testStatusExplicitCompletedDecodes() {
+        let p = NotifyPayload.decode(json(["status": "completed"]))
+        XCTAssertEqual(p?.sessionStatus, .completed)
+    }
+
     func testRejectsInvalidJSON() {
         XCTAssertNil(NotifyPayload.decode(Data("not json".utf8)))
     }

@@ -48,6 +48,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("NotifyServer failed to start: \(error)")
             menuBar?.showServerError("\(error)")
         }
+
+        // Keep installed hooks/scripts current across app upgrades. Only when the
+        // user has already opted in (hook installed): re-run the idempotent
+        // installer so newly bundled hooks (e.g. the Notification hook) and the
+        // latest scripts propagate without a manual remove+reinstall. Never
+        // auto-installs for a user who has not opted in. Off-main: small file IO.
+        if HookStatus.current() == .installed {
+            DispatchQueue.global(qos: .utility).async {
+                do { try HookInstaller().install() }
+                catch { NSLog("Hook refresh on launch failed: \(error)") }
+            }
+        }
     }
 
     /// Jump to the pane owning a reminder and consume it. Shared by tab clicks

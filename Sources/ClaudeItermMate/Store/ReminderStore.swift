@@ -16,6 +16,9 @@ struct ReminderItem: Identifiable, Equatable {
     var fullMessage: String
     var timestamp: Double
     var phase: ReminderPhase
+    /// Completed ("look when you can") vs waiting ("blocked, act now"). Drives
+    /// the amber tab accent. Orthogonal to `phase`.
+    var status: SessionStatus
     /// Palette slot + worktree lighten level, assigned by the shared
     /// `ColorAssigner` at upsert so tabs match the injected `/color` name.
     var colorIndex: Int
@@ -68,6 +71,7 @@ final class ReminderStore {
             fullMessage: p.fullMessage,
             timestamp: p.timestamp,
             phase: .toasting(token: token),
+            status: p.sessionStatus,
             colorIndex: assigner.colorIndex(for: identity.key),
             lightenLevel: 0,
             focusable: p.focusable
@@ -93,6 +97,18 @@ final class ReminderStore {
             }
             for (level, i) in ordered.enumerated() { items[i].lightenLevel = level }
         }
+    }
+
+    /// Update an existing item's content in place (summary/message/timestamp)
+    /// without touching its phase, token, status, or color. Used when a session
+    /// already showing a waiting state gets a follow-up waiting event: the tab
+    /// refreshes but must not re-enter the toast cycle (no new token) or vanish
+    /// from the strip (phase stays `.queued`). No-op if the session is unknown.
+    func refreshContent(sessionUUID: String, summary: String, fullMessage: String, timestamp: Double) {
+        guard let i = items.firstIndex(where: { $0.sessionUUID == sessionUUID }) else { return }
+        items[i].summary = summary
+        items[i].fullMessage = fullMessage
+        items[i].timestamp = timestamp
     }
 
     func queueIfCurrent(sessionUUID: String, token: UUID) {

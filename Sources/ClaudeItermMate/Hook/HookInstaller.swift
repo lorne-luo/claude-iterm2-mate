@@ -39,11 +39,17 @@ struct HookInstaller {
         "node \"\(scriptPath)\""
     }
 
+    /// The Notification-hook command line: the same script in notification mode.
+    static func notificationHookCommand(scriptPath: String) -> String {
+        "node \"\(scriptPath)\" --event notification"
+    }
+
     static func settingsByAddingHook(
         _ json: [String: Any],
         command: String,
         event: String = "Stop",
-        marker: String = "mate-notify.js"
+        marker: String = "mate-notify.js",
+        matcher: String = ""
     ) -> [String: Any] {
         var settings = json
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
@@ -59,7 +65,7 @@ struct HookInstaller {
         }
 
         groups.append([
-            "matcher": "",
+            "matcher": matcher,
             "hooks": [["type": "command", "command": command]],
         ])
         hooks[event] = groups
@@ -138,6 +144,17 @@ struct HookInstaller {
             event: "SessionStart",
             marker: "mate-session-start.js"
         )
+        // The Notification hook reuses mate-notify.js in --event notification
+        // mode, filtered to permission prompts. Its own marker (`--event
+        // notification`) keeps it distinct from the Stop hook, which is the same
+        // script without the flag.
+        updated = Self.settingsByAddingHook(
+            updated,
+            command: Self.notificationHookCommand(scriptPath: Self.scriptDestURL.path),
+            event: "Notification",
+            marker: "--event notification",
+            matcher: "permission_prompt"
+        )
         try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         var data = try JSONSerialization.data(
             withJSONObject: updated,
@@ -163,6 +180,9 @@ struct HookInstaller {
             var updated = Self.settingsByRemovingHook(object)
             updated = Self.settingsByRemovingHook(
                 updated, event: "SessionStart", marker: "mate-session-start.js"
+            )
+            updated = Self.settingsByRemovingHook(
+                updated, event: "Notification", marker: "--event notification"
             )
             var out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
             out.append(0x0A)

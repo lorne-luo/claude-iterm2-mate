@@ -95,4 +95,84 @@ final class HookInstallerTests: XCTestCase {
         let result = HookInstaller.settingsByRemovingHook(existing)
         XCTAssertEqual(stopCommands(result), [afplay])
     }
+
+    // MARK: Notification hook
+
+    private let notifCommand =
+        "node \"/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js\" --event notification"
+
+    /// The flat list of (command, matcher) pairs for a given event.
+    private func groups(_ settings: [String: Any], event: String) -> [(command: String, matcher: String)] {
+        guard
+            let hooks = settings["hooks"] as? [String: Any],
+            let evt = hooks[event] as? [[String: Any]]
+        else { return [] }
+        return evt.flatMap { group -> [(String, String)] in
+            let matcher = group["matcher"] as? String ?? ""
+            return (group["hooks"] as? [[String: Any]] ?? []).compactMap {
+                ($0["command"] as? String).map { ($0, matcher) }
+            }
+        }
+    }
+
+    func testAddsNotificationHookWithPermissionMatcher() {
+        let result = HookInstaller.settingsByAddingHook(
+            [:], command: notifCommand, event: "Notification",
+            marker: "--event notification", matcher: "permission_prompt"
+        )
+        let g = groups(result, event: "Notification")
+        XCTAssertEqual(g.count, 1)
+        XCTAssertEqual(g[0].command, notifCommand)
+        XCTAssertEqual(g[0].matcher, "permission_prompt")
+    }
+
+    func testNotificationHookIdempotent() {
+        let once = HookInstaller.settingsByAddingHook(
+            [:], command: notifCommand, event: "Notification",
+            marker: "--event notification", matcher: "permission_prompt"
+        )
+        let twice = HookInstaller.settingsByAddingHook(
+            once, command: notifCommand, event: "Notification",
+            marker: "--event notification", matcher: "permission_prompt"
+        )
+        XCTAssertEqual(groups(twice, event: "Notification").count, 1)
+    }
+
+    func testStopAndNotificationCoexistWithoutCrossDeletion() {
+        // Both hooks use mate-notify.js; installing the Notification hook must not
+        // touch the Stop hook, and removing one must leave the other.
+        var s = HookInstaller.settingsByAddingHook([:], command: command)
+        s = HookInstaller.settingsByAddingHook(
+            s, command: notifCommand, event: "Notification",
+            marker: "--event notification", matcher: "permission_prompt"
+        )
+        XCTAssertEqual(stopCommands(s), [command])
+        XCTAssertEqual(groups(s, event: "Notification").map(\.command), [notifCommand])
+
+        let removedNotif = HookInstaller.settingsByRemovingHook(
+            s, event: "Notification", marker: "--event notification"
+        )
+        XCTAssertEqual(stopCommands(removedNotif), [command], "removing Notification must keep Stop")
+        XCTAssertTrue(groups(removedNotif, event: "Notification").isEmpty)
+    }
+
+    func testRemovingStopLeavesNotification() {
+        var s = HookInstaller.settingsByAddingHook([:], command: command)
+        s = HookInstaller.settingsByAddingHook(
+            s, command: notifCommand, event: "Notification",
+            marker: "--event notification", matcher: "permission_prompt"
+        )
+        let removedStop = HookInstaller.settingsByRemovingHook(s) // Stop, mate-notify.js
+        XCTAssertTrue(stopCommands(removedStop).isEmpty)
+        XCTAssertEqual(groups(removedStop, event: "Notification").map(\.command), [notifCommand],
+                       "removing Stop must not remove the Notification hook")
+    }
+
+    func testNotificationHookCommandFormat() {
+        let path = "/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js"
+        XCTAssertEqual(
+            HookInstaller.notificationHookCommand(scriptPath: path),
+            "node \"\(path)\" --event notification"
+        )
+    }
 }

@@ -199,6 +199,61 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertEqual(toast.hideIntoTab, [true], "became a tab → shrink into the strip")
     }
 
+    private func waitingPayload(session: String = "S1", repoRoot: String = "/tmp/proj",
+                               full: String = "waiting") -> NotifyPayload {
+        NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
+            "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
+            "summary": "waiting", "full_message": full, "timestamp": 1.0,
+            "repo_root": repoRoot, "status": "waiting",
+        ]))!
+    }
+
+    func testWaitingFirstToastsAndMarksStatus() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        coordinator.handle(waitingPayload())
+        try await settle()
+        XCTAssertEqual(toast.shown, ["S1"])
+        XCTAssertEqual(coordinator.store.items.first?.status, .waiting)
+    }
+
+    // AC6: a permission storm (repeated waiting for one session) must refresh the
+    // existing tab, not spawn a second toast.
+    func testWaitingDoesNotRetoastWhileQueued() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.4)
+        coordinator.handle(waitingPayload(full: "perm Bash"))
+        try await settle()
+        try await Task.sleep(for: .milliseconds(1200)) // let it queue
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
+        XCTAssertEqual(toast.shown, ["S1"])
+
+        coordinator.handle(waitingPayload(full: "perm Write"))
+        try await settle()
+        XCTAssertEqual(toast.shown, ["S1"], "a follow-up waiting must not re-toast")
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
+        XCTAssertEqual(coordinator.store.queued.first?.status, .waiting)
+        XCTAssertEqual(coordinator.store.queued.first?.fullMessage, "perm Write",
+                       "the existing tab's content is refreshed in place")
+    }
+
+    // AC5 (coordinator half): a real completion after a waiting tab re-toasts and
+    // flips the tab to completed (amber clears).
+    func testCompletedAfterWaitingRetoastsAndFlipsStatus() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.4)
+        coordinator.handle(waitingPayload())
+        try await settle()
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(coordinator.store.queued.first?.status, .waiting)
+
+        coordinator.handle(payload()) // no status → completed
+        try await settle()
+        XCTAssertEqual(toast.shown, ["S1", "S1"], "a genuine completion re-toasts")
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(coordinator.store.queued.first?.status, .completed, "flipped to completed")
+    }
+
     private func sessionStartPayload(session: String = "S1", repoRoot: String = "/tmp/proj") -> NotifyPayload {
         NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
             "type": "session_start", "source": "startup",

@@ -95,8 +95,24 @@ final class ReminderCoordinator {
     }
 
     private func present(_ p: NotifyPayload, findable: Bool) {
-        let token = store.upsert(p)
         let session = p.sessionUUID
+        // R4: a session already showing a waiting state (a queued waiting tab or
+        // the waiting toast currently on screen) must not re-toast on a follow-up
+        // waiting event — e.g. a permission storm. Refresh the tab's content in
+        // place and return; the existing toast/tab keeps its own schedule.
+        if p.sessionStatus == .waiting,
+           let existing = store.items.first(where: { $0.sessionUUID == session }),
+           existing.status == .waiting,
+           existing.phase == .queued || displayed?.session == session {
+            store.refreshContent(
+                sessionUUID: session,
+                summary: p.summary,
+                fullMessage: p.fullMessage,
+                timestamp: p.timestamp
+            )
+            return
+        }
+        let token = store.upsert(p)
         let timer = ToastTimer(duration: toastDuration) { [weak self] in
             self?.complete(token: token, session: session, findable: findable)
         }
