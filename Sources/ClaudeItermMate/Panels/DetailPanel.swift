@@ -97,8 +97,10 @@ struct DetailView: View {
     var onClose: () -> Void = {}
 
     /// Live `5h N% · 7d N%` from the current in-memory snapshot, or nil when
-    /// there is no data yet (the header then omits the badge).
-    private var usageBadge: String? { usage?.snapshot?.badgeText }
+    /// there is no data yet (the header then omits the badge). `@MainActor`
+    /// because `UsageService.snapshot` is main-actor-isolated; only ever read
+    /// from `body`, which is itself main-actor.
+    @MainActor private var usageBadge: String? { usage?.snapshot?.badgeText }
 
     /// Static "2 minutes ago" snapshot computed when the card opens — unlike
     /// SwiftUI's `.relative` style it does not tick like a countdown. Within

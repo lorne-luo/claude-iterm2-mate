@@ -128,8 +128,10 @@ struct ToastView: View {
     }
 
     /// Live badge string from the current in-memory snapshot, or nil when there
-    /// is no data yet — the title row then renders exactly as before.
-    private var usageBadge: String? { usage?.snapshot?.badgeText }
+    /// is no data yet — the title row then renders exactly as before. `@MainActor`
+    /// because `UsageService.snapshot` is main-actor-isolated; only ever read
+    /// from `body`, which is itself main-actor.
+    @MainActor private var usageBadge: String? { usage?.snapshot?.badgeText }
 
     /// A small circular control (minimize / close) in the toast's top-right.
     /// `.buttonStyle(.plain)` keeps the tap from bubbling to the card's
