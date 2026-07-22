@@ -115,10 +115,13 @@ final class HookInstallerTests: XCTestCase {
         }
     }
 
+    // Marker is the script name (app-specific), matching install()/uninstall().
+    private let notifMarker = "mate-notify.js"
+
     func testAddsNotificationHookWithPermissionMatcher() {
         let result = HookInstaller.settingsByAddingHook(
             [:], command: notifCommand, event: "Notification",
-            marker: "--event notification", matcher: "permission_prompt"
+            marker: notifMarker, matcher: "permission_prompt"
         )
         let g = groups(result, event: "Notification")
         XCTAssertEqual(g.count, 1)
@@ -129,11 +132,11 @@ final class HookInstallerTests: XCTestCase {
     func testNotificationHookIdempotent() {
         let once = HookInstaller.settingsByAddingHook(
             [:], command: notifCommand, event: "Notification",
-            marker: "--event notification", matcher: "permission_prompt"
+            marker: notifMarker, matcher: "permission_prompt"
         )
         let twice = HookInstaller.settingsByAddingHook(
             once, command: notifCommand, event: "Notification",
-            marker: "--event notification", matcher: "permission_prompt"
+            marker: notifMarker, matcher: "permission_prompt"
         )
         XCTAssertEqual(groups(twice, event: "Notification").count, 1)
     }
@@ -144,13 +147,13 @@ final class HookInstallerTests: XCTestCase {
         var s = HookInstaller.settingsByAddingHook([:], command: command)
         s = HookInstaller.settingsByAddingHook(
             s, command: notifCommand, event: "Notification",
-            marker: "--event notification", matcher: "permission_prompt"
+            marker: notifMarker, matcher: "permission_prompt"
         )
         XCTAssertEqual(stopCommands(s), [command])
         XCTAssertEqual(groups(s, event: "Notification").map(\.command), [notifCommand])
 
         let removedNotif = HookInstaller.settingsByRemovingHook(
-            s, event: "Notification", marker: "--event notification"
+            s, event: "Notification", marker: notifMarker
         )
         XCTAssertEqual(stopCommands(removedNotif), [command], "removing Notification must keep Stop")
         XCTAssertTrue(groups(removedNotif, event: "Notification").isEmpty)
@@ -160,12 +163,30 @@ final class HookInstallerTests: XCTestCase {
         var s = HookInstaller.settingsByAddingHook([:], command: command)
         s = HookInstaller.settingsByAddingHook(
             s, command: notifCommand, event: "Notification",
-            marker: "--event notification", matcher: "permission_prompt"
+            marker: notifMarker, matcher: "permission_prompt"
         )
         let removedStop = HookInstaller.settingsByRemovingHook(s) // Stop, mate-notify.js
         XCTAssertTrue(stopCommands(removedStop).isEmpty)
         XCTAssertEqual(groups(removedStop, event: "Notification").map(\.command), [notifCommand],
                        "removing Stop must not remove the Notification hook")
+    }
+
+    // The app-specific marker must not match an unrelated Notification hook that
+    // merely passes `--event notification`: our install must still add ours, and
+    // uninstall must leave the stranger untouched.
+    func testNotificationMarkerIgnoresUnrelatedEventFlagHook() {
+        let stranger = "node /opt/other-tool.js --event notification"
+        var s = HookInstaller.settingsByAddingHook(
+            [:], command: stranger, event: "Notification", marker: "other-tool", matcher: "permission_prompt"
+        )
+        // Our add is not blocked by the stranger's `--event notification`.
+        s = HookInstaller.settingsByAddingHook(
+            s, command: notifCommand, event: "Notification", marker: notifMarker, matcher: "permission_prompt"
+        )
+        XCTAssertEqual(groups(s, event: "Notification").map(\.command), [stranger, notifCommand])
+        // Uninstalling ours leaves the stranger in place.
+        let removed = HookInstaller.settingsByRemovingHook(s, event: "Notification", marker: notifMarker)
+        XCTAssertEqual(groups(removed, event: "Notification").map(\.command), [stranger])
     }
 
     func testNotificationHookCommandFormat() {

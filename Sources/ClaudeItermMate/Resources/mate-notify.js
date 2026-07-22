@@ -264,6 +264,11 @@ function handleNotification(raw) {
   const messageText = typeof input.message === "string" ? input.message : "";
 
   const { focusable, sessionUUID } = deriveSession(input, cwd);
+  // Notification mode surfaces only iTerm2 (focusable) sessions. A non-iTerm2
+  // permission prompt has no pane to jump to, and forwarding it would let the
+  // app's non-focusable path fire an osascript desktop notification — which the
+  // no-desktop-fallback contract for permission pings forbids. So drop it here.
+  if (!focusable) return;
   const fields = baseFields(input, cwd, focusable, sessionUUID);
   fields.title = path.basename(cwd);
   fields.summary = extractSummary(toolName ? `Waiting: ${toolName}` : messageText || "Waiting for input");

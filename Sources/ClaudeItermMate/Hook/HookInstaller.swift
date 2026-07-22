@@ -119,10 +119,18 @@ struct HookInstaller {
                 throw InstallError.bundledScriptMissing
             }
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Atomically publish the script: copy to a sibling temp, then swap.
+            // A plain remove-then-copy leaves a window where the script is
+            // missing, during which a hook firing would error `MODULE_NOT_FOUND`.
+            // Relevant because `install()` re-runs on every launch (upgrade path).
+            let tmp = dest.appendingPathExtension("tmp-\(UUID().uuidString)")
+            try? fm.removeItem(at: tmp)
+            try fm.copyItem(at: bundled, to: tmp)
             if fm.fileExists(atPath: dest.path) {
-                try fm.removeItem(at: dest)
+                _ = try fm.replaceItemAt(dest, withItemAt: tmp)
+            } else {
+                try fm.moveItem(at: tmp, to: dest)
             }
-            try fm.copyItem(at: bundled, to: dest)
         }
 
         let settingsURL = Self.settingsURL
@@ -145,14 +153,16 @@ struct HookInstaller {
             marker: "mate-session-start.js"
         )
         // The Notification hook reuses mate-notify.js in --event notification
-        // mode, filtered to permission prompts. Its own marker (`--event
-        // notification`) keeps it distinct from the Stop hook, which is the same
-        // script without the flag.
+        // mode, filtered to permission prompts. Marker is the script name so it
+        // is app-specific: it matches our command (which contains the script
+        // path) but never an unrelated hook that merely passes
+        // `--event notification`, so we neither block its install nor delete it
+        // on uninstall. Per-event scoping keeps it distinct from the Stop hook.
         updated = Self.settingsByAddingHook(
             updated,
             command: Self.notificationHookCommand(scriptPath: Self.scriptDestURL.path),
             event: "Notification",
-            marker: "--event notification",
+            marker: "mate-notify.js",
             matcher: "permission_prompt"
         )
         try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -161,7 +171,12 @@ struct HookInstaller {
             options: [.prettyPrinted, .sortedKeys]
         )
         data.append(0x0A) // trailing newline
-        try data.write(to: settingsURL)
+        // Skip the write when nothing changed. `install()` re-runs on every
+        // launch; a no-op write would churn the file's formatting and widen the
+        // race window against another process editing settings.json.
+        if (try? Data(contentsOf: settingsURL)) != data {
+            try data.write(to: settingsURL)
+        }
     }
 
     /// Remove both hooks from settings.json and delete the App Support copies
@@ -182,7 +197,7 @@ struct HookInstaller {
                 updated, event: "SessionStart", marker: "mate-session-start.js"
             )
             updated = Self.settingsByRemovingHook(
-                updated, event: "Notification", marker: "--event notification"
+                updated, event: "Notification", marker: "mate-notify.js"
             )
             var out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
             out.append(0x0A)
