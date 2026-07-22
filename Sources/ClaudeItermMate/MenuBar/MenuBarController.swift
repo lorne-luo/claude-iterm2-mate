@@ -7,6 +7,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var serverError: String?
     private let menu = NSMenu()
+    private lazy var infoToast = InfoToastPanel()
 
     init(focusAvailable: Bool) {
         self.focusAvailable = focusAvailable
@@ -129,7 +130,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func installHook() {
         do {
             try HookInstaller().install()
-            notify("Hook installed — reminders are now active.")
+            // Success: an in-app SwiftUI toast (not osascript) so the "ready for
+            // work" confirmation matches the app's own reminder styling.
+            infoToast.show(title: "Ready for work", message: "Hook installed — reminders are now active.")
         } catch {
             NSLog("Hook install failed: \(error)")
             notify("Hook install failed: \(error.localizedDescription)")
