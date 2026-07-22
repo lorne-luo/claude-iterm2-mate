@@ -18,6 +18,13 @@ final class KeychainReaderTests: XCTestCase {
         XCTAssertNil(KeychainReader.parseAccessToken(json: json, now: now))
     }
 
+    func testEmptyTokenIsNil() {
+        let json = """
+        {"claudeAiOauth":{"accessToken":"","expiresAt":2000000000}}
+        """.data(using: .utf8)! // unexpired, but token is empty → guarded out
+        XCTAssertNil(KeychainReader.parseAccessToken(json: json, now: now))
+    }
+
     func testExpiredTokenIsNil() {
         let json = """
         {"claudeAiOauth":{"accessToken":"tok-123","expiresAt":500000000}}

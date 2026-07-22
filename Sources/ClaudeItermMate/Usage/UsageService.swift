@@ -11,6 +11,7 @@ final class UsageService {
     private(set) var snapshot: UsageSnapshot?
     private(set) var hudCacheAvailable = false
     private var lastAttemptAt: Date?
+    private var inFlight: Task<Void, Never>?
 
     private let minInterval: TimeInterval
     private let hudCachePath: String
@@ -52,16 +53,26 @@ final class UsageService {
     /// Returns the launched `Task` (nil when gated) so callers/tests can await
     /// completion; production callers ignore it (fire-and-forget). A nil result
     /// keeps the previous snapshot.
+    ///
+    /// An in-flight guard prevents overlapping fetches: a slow fetch (e.g. a
+    /// Keychain authorization prompt) can outlast `minInterval`, and without the
+    /// guard a later Stop event would spawn a second `security` process and prompt
+    /// again. It also keeps at most one fetch running, so a slower older fetch can
+    /// never land after a newer one and regress `snapshot` to stale data.
     @discardableResult
     func refreshIfStale() -> Task<Void, Never>? {
+        guard inFlight == nil else { return nil }
         let t = now()
         guard Self.shouldFetch(last: lastAttemptAt, now: t, minInterval: minInterval) else { return nil }
         lastAttemptAt = t
         let preferHud = hudCacheAvailable
-        return Task { @MainActor [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer { self.inFlight = nil }
             if let snap = await self.fetch(preferHud) { self.snapshot = snap }
         }
+        inFlight = task
+        return task
     }
 
     /// Default IO. `preferHud` true → read the local cache file (no network, no

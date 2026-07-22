@@ -58,6 +58,24 @@ final class UsageServiceTests: XCTestCase {
         XCTAssertEqual(svc.snapshot?.fiveHour?.utilization, 7, "nil fetch must not clobber a good snapshot")
     }
 
+    func testRefreshGatedWhileFetchInFlight() async {
+        // The task launched by refreshIfStale does not run until this @MainActor
+        // method next suspends, so between the two synchronous calls below the
+        // first fetch is provably still in flight. The second call must be gated by
+        // the in-flight guard even though the rate-limit interval has elapsed.
+        var calls = 0
+        var t = Date(timeIntervalSince1970: 1000)
+        let svc = UsageService(minInterval: 60, hudCachePath: "/nonexistent",
+                               now: { t }, fetch: { _ in calls += 1; return self.snap(1) })
+        let first = svc.refreshIfStale()          // task created & in flight; body not yet run
+        t = t.addingTimeInterval(120)             // interval elapsed, yet a fetch is in flight
+        XCTAssertNil(svc.refreshIfStale(), "must be gated while a fetch is in flight")
+        await first?.value                        // first fetch now runs to completion
+        XCTAssertEqual(calls, 1)
+        await svc.refreshIfStale()?.value         // in-flight cleared → allowed again
+        XCTAssertEqual(calls, 2)
+    }
+
     func testRefreshPassesPreferHudFromFlag() async {
         var seen: Bool?
         let path = NSTemporaryDirectory() + "usage-svc-\(UUID().uuidString).json"
