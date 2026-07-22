@@ -16,6 +16,12 @@ protocol ToastPanelProtocol: AnyObject {
 final class ToastPanel: ToastPanelProtocol {
     private var panel: NSPanel?
 
+    private let usage: UsageService?
+
+    init(usage: UsageService? = nil) {
+        self.usage = usage
+    }
+
     static let width: CGFloat = 440
     static let minHeight: CGFloat = 56
     /// Caps a long (10-line) message; short ones size down naturally.
@@ -31,6 +37,7 @@ final class ToastPanel: ToastPanelProtocol {
         let panel = PanelFactory.makePanel(frame: frame, canBecomeKey: true)
         panel.contentView = FirstMouseHostingView(rootView: ToastView(
             item: item,
+            usage: usage,
             onTap: { [weak self] in
                 self?.dismiss()
                 onClick()
@@ -96,6 +103,7 @@ final class ToastPanel: ToastPanelProtocol {
 
 struct ToastView: View {
     let item: ReminderItem
+    var usage: UsageService? = nil
     var onTap: () -> Void = {}
     var onHover: (Bool) -> Void = { _ in }
     var showsMinimize: Bool = false
@@ -118,6 +126,12 @@ struct ToastView: View {
         guard room >= 1 else { return base }
         return prefix + branch.prefix(room) + "…"
     }
+
+    /// Live badge string from the current in-memory snapshot, or nil when there
+    /// is no data yet — the title row then renders exactly as before. `@MainActor`
+    /// because `UsageService.snapshot` is main-actor-isolated; only ever read
+    /// from `body`, which is itself main-actor.
+    @MainActor private var usageBadge: String? { usage?.snapshot?.badgeText }
 
     /// A small circular control (minimize / close) in the toast's top-right.
     /// `.buttonStyle(.plain)` keeps the tap from bubbling to the card's
@@ -142,9 +156,19 @@ struct ToastView: View {
                 .fill(ReminderPalette.color(at: item.colorIndex, level: item.lightenLevel))
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 4) {
-                Text(Self.title(project: item.projectName, branch: item.branchLabel))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(Self.title(project: item.projectName, branch: item.branchLabel))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if let badge = usageBadge {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
                 Text(item.fullMessage)
                     .font(.system(size: 12))
                     .foregroundStyle(.primary)

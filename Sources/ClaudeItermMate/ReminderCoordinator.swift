@@ -11,6 +11,10 @@ final class ReminderCoordinator {
     private let toastPanel: ToastPanelProtocol?
     private let probe: ItermSessionProbe
 
+    /// Owns the in-memory usage snapshot; refreshed (non-blocking) on each
+    /// reminder and probed for claude-hud's cache on each session_start.
+    private let usage: UsageService?
+
     /// Invoked when a toast is clicked — jump to the pane and consume the
     /// reminder (same as clicking its tab). Injected by AppDelegate.
     var onActivate: ((ReminderItem) -> Void)?
@@ -45,12 +49,14 @@ final class ReminderCoordinator {
         store: ReminderStore,
         toastDuration: TimeInterval = 8.0,
         toastPanel: ToastPanelProtocol?,
-        probe: ItermSessionProbe = ItermSessionLookup()
+        probe: ItermSessionProbe = ItermSessionLookup(),
+        usage: UsageService? = nil
     ) {
         self.store = store
         self.toastDuration = toastDuration
         self.toastPanel = toastPanel
         self.probe = probe
+        self.usage = usage
     }
 
     private var visibleFrame: CGRect {
@@ -64,11 +70,13 @@ final class ReminderCoordinator {
         if p.isSessionStart {
             // Color-injection trigger, not a reminder: assign (or look up) the
             // project's color now, then hand off to the injector.
+            usage?.probeHudCache()
             let identity = ReminderIdentity(repoRoot: p.repoRoot, branch: p.branch, cwd: p.cwd)
             let name = store.assigner.colorName(for: identity.key)
             onSessionStart?(p.sessionUUID, name)
             return
         }
+        usage?.refreshIfStale()
         if !p.focusable {
             // Non-iTerm2: no pane to probe/jump to. Show a dismiss-only tab when
             // the toggle is on; otherwise fall back to a desktop notification.
