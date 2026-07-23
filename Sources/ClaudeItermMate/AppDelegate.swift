@@ -16,7 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel(usage: usage), usage: usage)
         coordinator.onActivate = { [weak self] item in self?.activate(item) }
         coordinator.isNonItermEnabled = { AppSettings.showNonIterm }
-        coordinator.onNotify = { [weak self] title, body in self?.desktopNotify(title: title, body: body) }
+        coordinator.onNotify = { [weak self] title, subtitle, body in
+            self?.desktopNotify(title: title, subtitle: subtitle, body: body)
+        }
         let colorAction = self.colorAction
         coordinator.onSessionStart = { sessionUUID, colorName in
             // Delay so a freshly launched Claude Code TUI is in raw mode and
@@ -72,14 +74,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.remove(sessionUUID: item.sessionUUID)
     }
 
-    /// Plain macOS desktop notification for non-iTerm2 sessions when the
-    /// "show non-iTerm2 sessions" toggle is off.
-    private func desktopNotify(title: String, body: String) {
-        let safeTitle = title.replacingOccurrences(of: "\"", with: "“")
-        let safeBody = body.replacingOccurrences(of: "\"", with: "“")
+    /// Desktop notification for a non-iTerm2 session (no pane to jump to).
+    /// AppleScript strings take no backslash escapes: drop backslashes, swap
+    /// double quotes for curly quotes, and flatten newlines to keep the single
+    /// `-e` line valid. An empty subtitle/body segment is omitted.
+    private func desktopNotify(title: String, subtitle: String, body: String) {
+        func sanitize(_ s: String) -> String {
+            s.replacingOccurrences(of: "\\", with: "")
+                .replacingOccurrences(of: "\"", with: "“")
+                .replacingOccurrences(of: "\n", with: " ")
+        }
+        var script = "display notification \"\(sanitize(body))\" with title \"\(sanitize(title))\""
+        let sub = sanitize(subtitle)
+        if !sub.isEmpty { script += " subtitle \"\(sub)\"" }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-e", "display notification \"\(safeBody)\" with title \"\(safeTitle)\""]
+        p.arguments = ["-e", script]
         try? p.run()
     }
 

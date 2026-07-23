@@ -114,7 +114,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         login.image = symbol("power")
         menu.addItem(login)
         let nonIterm = NSMenuItem(
-            title: "Show Non-iTerm2 Sessions", action: #selector(toggleNonIterm(_:)), keyEquivalent: ""
+            title: "Notify Non-iTerm2 Sessions", action: #selector(toggleNonIterm(_:)), keyEquivalent: ""
         )
         nonIterm.target = self
         nonIterm.state = AppSettings.showNonIterm ? .on : .off

@@ -24,14 +24,15 @@ final class ReminderCoordinator {
     /// `ItermColorAction` (delayed off-main); tests observe it directly.
     var onSessionStart: ((_ sessionUUID: String, _ colorName: String) -> Void)?
 
-    /// Whether non-iTerm2 (non-focusable) sessions should surface as tabs.
-    /// When false they fall back to a desktop notification via `onNotify`.
-    /// Defaults to always-on; AppDelegate wires it to `AppSettings.showNonIterm`.
+    /// Whether non-iTerm2 (non-focusable) sessions should be announced at all.
+    /// When true they fire a desktop notification via `onNotify`; when false
+    /// they are silent. Non-iTerm2 sessions never become tabs — there is no pane
+    /// to jump to. Defaults to on; AppDelegate wires it to `AppSettings.showNonIterm`.
     var isNonItermEnabled: () -> Bool = { true }
 
-    /// Emit a plain desktop notification (title, body) — used for non-iTerm2
-    /// sessions when `isNonItermEnabled` is off. Injected by AppDelegate.
-    var onNotify: ((_ title: String, _ body: String) -> Void)?
+    /// Emit a desktop notification (title, subtitle, body) for a non-iTerm2
+    /// session when `isNonItermEnabled` is on. Injected by AppDelegate.
+    var onNotify: ((_ title: String, _ subtitle: String, _ body: String) -> Void)?
 
     /// Token of the toast currently shown in the single shared panel. Only the
     /// timer that owns the visible toast may hide it, so an older session's
@@ -78,12 +79,10 @@ final class ReminderCoordinator {
         }
         usage?.refreshIfStale()
         if !p.focusable {
-            // Non-iTerm2: no pane to probe/jump to. Show a dismiss-only tab when
-            // the toggle is on; otherwise fall back to a desktop notification.
+            // Non-iTerm2: no pane to jump to, so never a tab. Announce with a
+            // desktop notification when the toggle is on; stay silent otherwise.
             if isNonItermEnabled() {
-                present(p, findable: true)
-            } else {
-                onNotify?(p.title, p.summary)
+                onNotify?(p.title, p.summary, Self.notificationBody(p.fullMessage))
             }
             return
         }
@@ -92,6 +91,18 @@ final class ReminderCoordinator {
             let findable = probe.canFind(p.sessionUUID)
             DispatchQueue.main.async { [weak self] in self?.present(p, findable: findable) }
         }
+    }
+
+    /// Body text for a non-iTerm2 desktop notification: the reply past its first
+    /// line (the subtitle already shows that), whitespace-flattened and capped.
+    /// Empty when the reply is a single line.
+    static func notificationBody(_ full: String, limit: Int = 200) -> String {
+        let lines = full.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.count > 1 else { return "" }
+        let rest = lines.dropFirst()
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return rest.count > limit ? String(rest.prefix(limit)) + "…" : rest
     }
 
     private func present(_ p: NotifyPayload, findable: Bool) {
