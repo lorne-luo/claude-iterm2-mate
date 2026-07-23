@@ -121,6 +121,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         nonIterm.isEnabled = installed
         nonIterm.image = symbol("macwindow.on.rectangle")
         menu.addItem(nonIterm)
+        let colorPanes = NSMenuItem(
+            title: "Color Session Panes", action: #selector(toggleColorPanes(_:)), keyEquivalent: ""
+        )
+        colorPanes.target = self
+        colorPanes.state = AppSettings.colorPanes ? .on : .off
+        colorPanes.isEnabled = installed
+        colorPanes.image = symbol("paintpalette")
+        menu.addItem(colorPanes)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.image = symbol("xmark.circle")
@@ -182,6 +190,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleNonIterm(_ sender: NSMenuItem) {
         AppSettings.showNonIterm.toggle()
         sender.state = AppSettings.showNonIterm ? .on : .off
+    }
+
+    @objc private func toggleColorPanes(_ sender: NSMenuItem) {
+        AppSettings.colorPanes.toggle()
+        sender.state = AppSettings.colorPanes ? .on : .off
     }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {

@@ -11,4 +11,13 @@ enum AppSettings {
         get { UserDefaults.standard.object(forKey: showNonItermKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: showNonItermKey) }
     }
+
+    private static let colorPanesKey = "colorSessionPanes"
+
+    /// Whether SessionStart sets the iTerm2 pane background to the project color.
+    /// Default true. Off → panes are left at their default background.
+    static var colorPanes: Bool {
+        get { UserDefaults.standard.object(forKey: colorPanesKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: colorPanesKey) }
+    }
 }

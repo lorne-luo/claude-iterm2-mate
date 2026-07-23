@@ -284,7 +284,7 @@ final class ReminderCoordinatorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: path) }
         let usage = UsageService(hudCachePath: path, fetch: { _ in nil })
         let coordinator = ReminderCoordinator(store: ReminderStore(), toastPanel: nil, usage: usage)
-        coordinator.onSessionStart = { _, _ in }
+        coordinator.onSetPaneBackground = { _, _ in }
         coordinator.handle(sessionStartPayload())
         XCTAssertTrue(usage.hudCacheAvailable, "session_start must probe the hud cache")
     }

@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tabStrip: TabStripPanel?
     private lazy var detail = DetailPanel(usage: usage)
     private let focusAction = ItermFocusAction()
-    private let colorAction = ItermColorAction()
+    private let bgColorAction = ItermBgColorAction()
     private var menuBar: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -19,13 +19,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onNotify = { [weak self] title, subtitle, body in
             self?.desktopNotify(title: title, subtitle: subtitle, body: body)
         }
-        let colorAction = self.colorAction
-        coordinator.onSessionStart = { sessionUUID, colorName in
-            // Delay so a freshly launched Claude Code TUI is in raw mode and
-            // owns the tty before the keystrokes arrive; injection itself is
-            // fire-and-forget off the main thread.
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.0) {
-                colorAction.inject(sessionUUID: sessionUUID, colorName: colorName)
+        let bgColorAction = self.bgColorAction
+        coordinator.onSetPaneBackground = { sessionUUID, hex in
+            guard AppSettings.colorPanes else { return }
+            // Fire-and-forget off the main thread. No delay needed: the Python
+            // API sets the pane's background at the app layer regardless of TUI
+            // state (unlike the old /color keystroke injection).
+            DispatchQueue.global(qos: .utility).async {
+                bgColorAction.apply(sessionUUID: sessionUUID, hex: hex)
             }
         }
         menuBar = MenuBarController(focusAvailable: focusAction.canFocus)

@@ -1,10 +1,10 @@
 import Foundation
 
-/// In-memory color authority shared by the session-start injection path and
-/// the tab renderer. Assigns each project (repo root / cwd) one of the 8
-/// `/color` palette slots so the Claude Code prompt bar and the app's tab show
-/// the same color name. (Tab lighten levels for concurrent same-directory
-/// sessions are owned by `ReminderStore`, not here.)
+/// In-memory color authority shared by the session-start pane-coloring path and
+/// the tab renderer. Assigns each project (repo root / cwd) one of the 8 palette
+/// slots so the pane background and the app's tab read as the same color. (Tab
+/// lighten levels for concurrent same-directory sessions are owned by
+/// `ReminderStore`; worktree pane shades by `PaneShade`.)
 ///
 /// Deterministic first, collision-averse second: a repo's preferred slot is
 /// its FNV-1a hash mod 8 (same derivation as `ReminderIdentity`), but if that
@@ -27,10 +27,5 @@ final class ColorAssigner {
         }
         slotByRepo[key] = slot
         return slot
-    }
-
-    /// The `/color` name injected into sessions of this project.
-    func colorName(for key: String) -> String {
-        ReminderPalette.colorName(at: colorIndex(for: key))
     }
 }

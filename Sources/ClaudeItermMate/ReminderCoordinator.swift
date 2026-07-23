@@ -20,9 +20,9 @@ final class ReminderCoordinator {
     var onActivate: ((ReminderItem) -> Void)?
 
     /// Invoked for a session_start message with the session UUID and the
-    /// project's assigned `/color` name. AppDelegate wires this to
-    /// `ItermColorAction` (delayed off-main); tests observe it directly.
-    var onSessionStart: ((_ sessionUUID: String, _ colorName: String) -> Void)?
+    /// project's pane background color (`RRGGBB` hex). AppDelegate wires this to
+    /// `ItermBgColorAction` (off-main, gated by the toggle); tests observe it.
+    var onSetPaneBackground: ((_ sessionUUID: String, _ hex: String) -> Void)?
 
     /// Whether non-iTerm2 (non-focusable) sessions should be announced at all.
     /// When true they fire a desktop notification via `onNotify`; when false
@@ -69,12 +69,15 @@ final class ReminderCoordinator {
     /// but never becomes a tab.
     func handle(_ p: NotifyPayload) {
         if p.isSessionStart {
-            // Color-injection trigger, not a reminder: assign (or look up) the
-            // project's color now, then hand off to the injector.
+            // Pane-coloring trigger, not a reminder: pick the project's color
+            // slot + worktree shade, then hand the dark background hex to the
+            // pane colorer.
             usage?.probeHudCache()
             let identity = ReminderIdentity(repoRoot: p.repoRoot, branch: p.branch, cwd: p.cwd)
-            let name = store.assigner.colorName(for: identity.key)
-            onSessionStart?(p.sessionUUID, name)
+            let index = store.assigner.colorIndex(for: identity.key)
+            let shade = PaneShade.level(branch: p.branch, isWorktree: p.isWorktree)
+            let hex = ReminderPalette.backgroundHex(at: index, shade: shade)
+            onSetPaneBackground?(p.sessionUUID, hex)
             return
         }
         usage?.refreshIfStale()
