@@ -34,7 +34,7 @@ final class ReminderCoordinatorTests: XCTestCase {
         NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
             "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
             "summary": "done", "full_message": "done", "timestamp": 1.0,
-            "repo_root": repoRoot,
+            "repo_root": repoRoot, "type": "stop",
         ]))!
     }
 
@@ -341,5 +341,90 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertEqual(item?.kind, .question)
         XCTAssertEqual(item?.summary, "Pick?", "generic waiting must not overwrite the question")
         XCTAssertEqual(item?.questions.count, 1)
+    }
+
+    // MARK: - /color injection on Stop
+
+    /// The color name expected for a repo, resolved via the same assigner the
+    /// coordinator uses (stable/idempotent).
+    private func expectedColorName(_ coordinator: ReminderCoordinator, repoRoot: String) -> String {
+        let identity = ReminderIdentity(repoRoot: repoRoot, branch: nil, cwd: repoRoot)
+        return ReminderPalette.colorName(at: coordinator.store.assigner.colorIndex(for: identity.key))
+    }
+
+    /// A genuine Stop (type "stop") whose reply ends in a question — still an
+    /// ordinary composer, so injection is safe and expected.
+    private func waitingStopPayload(session: String = "S1", repoRoot: String = "/tmp/proj") -> NotifyPayload {
+        NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
+            "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
+            "summary": "?", "full_message": "Which one?", "timestamp": 1.0,
+            "repo_root": repoRoot, "type": "stop", "status": "waiting",
+        ]))!
+    }
+
+    // A completed, focusable Stop injects /color once; a second Stop for the
+    // same session does not re-inject (boolean per-session dedup).
+    func testCompletedStopInjectsColorOncePerSession() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [(String, String)] = []
+        coordinator.onInjectColor = { injected.append(($0, $1)) }
+        coordinator.handle(payload())
+        XCTAssertEqual(injected.map(\.0), ["S1"])
+        XCTAssertEqual(injected.first?.1, expectedColorName(coordinator, repoRoot: "/tmp/proj"))
+        coordinator.handle(payload())
+        XCTAssertEqual(injected.count, 1, "same session must not re-inject")
+    }
+
+    // A genuine Stop whose reply ends in a question is still injected — the
+    // composer is ordinary; only the TUI-bearing events below are excluded.
+    func testWaitingGenuineStopInjectsColor() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.handle(waitingStopPayload())
+        XCTAssertEqual(injected, ["S1"], "a question-ending Stop still injects /color")
+    }
+
+    // A permission-prompt Notification (type-less, waiting) is NOT a Stop and
+    // must not inject — its live TUI would be corrupted by the keys.
+    func testPermissionNotificationDoesNotInjectColor() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.handle(waitingPayload())
+        XCTAssertTrue(injected.isEmpty, "a permission notification must not inject /color")
+    }
+
+    // An AskUserQuestion event (type "question") must not inject — same TUI risk.
+    func testQuestionEventDoesNotInjectColor() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.handle(questionPayload())
+        XCTAssertTrue(injected.isEmpty, "an AskUserQuestion must not inject /color")
+    }
+
+    // SessionStart must not inject (injection is Stop-only).
+    func testSessionStartDoesNotInjectColor() {
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastPanel: nil)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.onSetPaneBackground = { _, _ in }
+        coordinator.handle(sessionStartPayload())
+        XCTAssertTrue(injected.isEmpty, "session_start must not inject /color")
+    }
+
+    // AC7: with coloring disabled, no injection and the session stays unmarked, so
+    // enabling later injects on the next completed Stop.
+    func testDisabledGateSkipsInjectionAndDoesNotMark() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.isPaneColoringEnabled = { false }
+        coordinator.handle(payload())
+        XCTAssertTrue(injected.isEmpty, "disabled gate must skip injection")
+        coordinator.isPaneColoringEnabled = { true }
+        coordinator.handle(payload())
+        XCTAssertEqual(injected, ["S1"], "session was not marked while disabled → injects once enabled")
     }
 }

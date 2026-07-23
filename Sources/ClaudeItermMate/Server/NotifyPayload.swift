@@ -31,10 +31,11 @@ struct NotifyPayload: Codable, Equatable {
     let branch: String?
     // True when the session runs in a linked git worktree; absent -> false.
     let isWorktree: Bool
-    // Message kind: absent for Stop notifications (backward compatible);
-    // "session_start" for the SessionStart hook's color-injection trigger;
-    // "question" for an AskUserQuestion PreToolUse; "resolve" for its
-    // PostToolUse (clear the waiting tab).
+    // Message kind: "stop" for a genuine Stop event (older hooks omit it →
+    // still handled as a Stop, but they cannot inject /color, see `isStop`);
+    // "session_start" for the SessionStart hook's color trigger; "question" for
+    // an AskUserQuestion PreToolUse; "resolve" for its PostToolUse (clear the
+    // waiting tab); absent for a permission-prompt Notification.
     let type: String?
     // AskUserQuestion questions + options (only on `type == "question"`).
     let questions: [Question]?
@@ -80,6 +81,11 @@ struct NotifyPayload: Codable, Equatable {
     var projectName: String { (cwd as NSString).lastPathComponent }
 
     var isSessionStart: Bool { type == "session_start" }
+
+    /// A genuine Stop event (turn finished, pane back at an ordinary composer).
+    /// The one event where injecting `/color` keystrokes is safe — unlike a
+    /// permission prompt or AskUserQuestion, which show a live TUI.
+    var isStop: Bool { type == "stop" }
 
     /// AskUserQuestion PreToolUse event (carries `questions`).
     var isQuestion: Bool { type == "question" }

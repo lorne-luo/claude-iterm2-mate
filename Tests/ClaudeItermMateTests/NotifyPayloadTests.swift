@@ -103,6 +103,21 @@ final class NotifyPayloadTests: XCTestCase {
         XCTAssertEqual(p?.questions?.first?.multiSelect, false)
     }
 
+    func testStopTypeDecodesAsIsStop() {
+        let p = NotifyPayload.decode(json(["type": "stop"]))
+        XCTAssertEqual(p?.isStop, true)
+        // A stop-marked reply that ends in a question is still a genuine Stop.
+        let q = NotifyPayload.decode(json(["type": "stop", "status": "waiting"]))
+        XCTAssertEqual(q?.isStop, true)
+        XCTAssertEqual(q?.sessionStatus, .waiting)
+    }
+
+    func testTypelessPayloadIsNotStop() {
+        // A permission-prompt Notification is type-less and must not read as a Stop.
+        XCTAssertEqual(NotifyPayload.decode(json(["status": "waiting"]))?.isStop, false)
+        XCTAssertEqual(NotifyPayload.decode(json())?.isStop, false)
+    }
+
     func testDecodesMinimalResolvePayload() {
         // The `--event ask-done` payload has no title/summary/full_message.
         let data = try! JSONSerialization.data(withJSONObject: [

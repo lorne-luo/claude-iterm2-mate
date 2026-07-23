@@ -25,6 +25,11 @@ final class ReminderCoordinator {
     /// is called.
     var onSetPaneBackground: ((_ sessionUUID: String, _ hex: String) -> Void)?
 
+    /// Invoked to inject `/color <name>` into a session's iTerm2 prompt bar.
+    /// AppDelegate wires this to `ItermColorAction` (off-main, fire-and-forget);
+    /// tests observe it. Gating/dedup happen in `injectColorIfNeeded` first.
+    var onInjectColor: ((_ sessionUUID: String, _ colorName: String) -> Void)?
+
     /// Whether pane background coloring is enabled. Injected gate (same pattern
     /// as `isNonItermEnabled`); AppDelegate wires it to `AppSettings.colorPanes`.
     /// Kept here (not in the AppDelegate closure) so `coloredSessions` only
@@ -57,6 +62,12 @@ final class ReminderCoordinator {
     /// app restart). Lets Stop backfill color sessions that predate the app and
     /// skip repeated coloring; a changed project hex re-applies. (R8)
     private var coloredSessions: [String: String] = [:]
+
+    /// Sessions that have already had `/color` injected. Boolean, in-memory only
+    /// (cleared on app restart): inject exactly once per session, then skip — even
+    /// if the project color would have changed (unlike `coloredSessions`). A
+    /// session is recorded only when injection actually fires. (R4)
+    private var colorInjectedSessions: Set<String> = []
 
     init(
         store: ReminderStore,
@@ -103,6 +114,9 @@ final class ReminderCoordinator {
         // R8 backfill: color a pre-existing session's pane on Stop too (needs only
         // the session id, not the findable probe below).
         colorPaneIfNeeded(p)
+        // Inject `/color` on Stop only (never SessionStart) and only for a
+        // completed turn, once per session.
+        injectColorIfNeeded(p)
         let probe = self.probe
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let findable = probe.canFind(p.sessionUUID)
@@ -125,6 +139,25 @@ final class ReminderCoordinator {
         guard coloredSessions[p.sessionUUID] != hex else { return }
         coloredSessions[p.sessionUUID] = hex
         onSetPaneBackground?(p.sessionUUID, hex)
+    }
+
+    /// Inject `/color <name>` into a session's prompt bar on its FIRST genuine
+    /// Stop, when coloring is enabled and the session is focusable. Gated on
+    /// `p.isStop` — NOT on completed/waiting: a Stop whose reply merely ends in a
+    /// question is still an ordinary, stashable composer (safe to inject), while
+    /// a permission prompt / AskUserQuestion arrives as a *different* event
+    /// (type-less Notification / `question`) that never sets `isStop`, so its
+    /// live TUI is never typed into. Shares the `colorPanes` gate with
+    /// `colorPaneIfNeeded` and resolves the SAME palette slot, so the prompt-bar
+    /// color matches the pane background. Called from the Stop branch only; the
+    /// SessionStart branch returns before reaching it. (R3, R4, R6)
+    private func injectColorIfNeeded(_ p: NotifyPayload) {
+        guard isPaneColoringEnabled(), p.focusable, p.isStop,
+              !colorInjectedSessions.contains(p.sessionUUID) else { return }
+        let identity = ReminderIdentity(repoRoot: p.repoRoot, branch: p.branch, cwd: p.cwd)
+        let name = ReminderPalette.colorName(at: store.assigner.colorIndex(for: identity.key))
+        colorInjectedSessions.insert(p.sessionUUID)
+        onInjectColor?(p.sessionUUID, name)
     }
 
     /// Body text for a non-iTerm2 desktop notification: the reply past its first

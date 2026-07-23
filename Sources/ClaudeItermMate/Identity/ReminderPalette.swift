@@ -7,11 +7,15 @@ import SwiftUI
 /// (see `backgroundComponents`). The glyph foreground flips black/white by
 /// background luminance so it always contrasts.
 ///
-/// The names originate from Claude Code's `/color` palette (the old prompt-bar
-/// sync); they no longer drive any injection but document each slot's hue.
+/// The names originate from Claude Code's `/color` palette; they document each
+/// slot's hue and drive the `/color <name>` prompt-bar injection on Stop
+/// (`ItermColorAction`, via `colorName(at:)`).
 enum ReminderPalette {
     /// Human-readable hue names; `names[i]` corresponds to `rgb[i]`.
     static let names = ["red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"]
+
+    /// The `/color` name injected into sessions of the project at `index`.
+    static func colorName(at index: Int) -> String { names[wrap(index)] }
 
     /// sRGB components in 0...1. Count must equal `ReminderIdentity.paletteCount`.
     /// Dark-theme hex: red #ff5858, blue #57c7ff, green #50fa7b, yellow #f1fa8c,

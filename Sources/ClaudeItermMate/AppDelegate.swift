@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var detail = DetailPanel(usage: usage)
     private let focusAction = ItermFocusAction()
     private let bgColorAction = ItermBgColorAction()
+    private let colorAction = ItermColorAction()
     private let sendTextAction = ItermSendTextAction()
     private var menuBar: MenuBarController?
 
@@ -29,6 +30,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // handled in the coordinator before this runs.
             DispatchQueue.global(qos: .utility).async {
                 bgColorAction.apply(sessionUUID: sessionUUID, hex: hex)
+            }
+        }
+        let colorAction = self.colorAction
+        coordinator.onInjectColor = { sessionUUID, name in
+            // Fire-and-forget off the main thread. Only reached on a genuine Stop
+            // event (gated on `isStop` in the coordinator), so the composer is an
+            // ordinary, stashable prompt — never a live permission/question TUI.
+            DispatchQueue.global(qos: .utility).async {
+                colorAction.inject(sessionUUID: sessionUUID, colorName: name)
             }
         }
         menuBar = MenuBarController(focusAvailable: focusAction.canFocus)

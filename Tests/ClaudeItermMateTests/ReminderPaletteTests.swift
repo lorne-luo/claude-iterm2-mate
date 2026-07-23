@@ -27,6 +27,16 @@ final class ReminderPaletteTests: XCTestCase {
         )
     }
 
+    func testColorNameMapsSlotToNameAndWraps() {
+        for (i, name) in ReminderPalette.names.enumerated() {
+            XCTAssertEqual(ReminderPalette.colorName(at: i), name)
+        }
+        // Out-of-range indices wrap into the palette (negative and overflow).
+        let n = ReminderPalette.names.count
+        XCTAssertEqual(ReminderPalette.colorName(at: n), ReminderPalette.names[0])
+        XCTAssertEqual(ReminderPalette.colorName(at: -1), ReminderPalette.names[n - 1])
+    }
+
     func testEachLevelIsLighterAndLessSaturatedThanThePrevious() {
         for i in 0..<ReminderIdentity.paletteCount {
             for level in 1...3 {

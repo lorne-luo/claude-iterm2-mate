@@ -235,6 +235,11 @@ function main(raw) {
   fields.summary = summary;
   fields.full_message = typeof message === "string" ? message : "";
   fields.status = classifyStopStatus(message);
+  // Mark the genuine Stop event so the app can tell it apart from a
+  // permission-prompt Notification (both are otherwise type-less and can be
+  // "waiting"). Only the real Stop leaves the pane at an ordinary, stashable
+  // composer, so only it may inject `/color`.
+  fields.type = "stop";
 
   sendPayload(fields, () => notifyMacOS(title, summary));
 }
