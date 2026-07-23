@@ -19,10 +19,17 @@ final class ReminderCoordinator {
     /// reminder (same as clicking its tab). Injected by AppDelegate.
     var onActivate: ((ReminderItem) -> Void)?
 
-    /// Invoked for a session_start message with the session UUID and the
-    /// project's pane background color (`RRGGBB` hex). AppDelegate wires this to
-    /// `ItermBgColorAction` (off-main, gated by the toggle); tests observe it.
+    /// Invoked to color a session's iTerm2 pane background (`RRGGBB` hex).
+    /// AppDelegate wires this to `ItermBgColorAction` (off-main, fire-and-forget);
+    /// tests observe it. Gating/dedup happen in `colorPaneIfNeeded` before this
+    /// is called.
     var onSetPaneBackground: ((_ sessionUUID: String, _ hex: String) -> Void)?
+
+    /// Whether pane background coloring is enabled. Injected gate (same pattern
+    /// as `isNonItermEnabled`); AppDelegate wires it to `AppSettings.colorPanes`.
+    /// Kept here (not in the AppDelegate closure) so `coloredSessions` only
+    /// records a session when coloring actually applies.
+    var isPaneColoringEnabled: () -> Bool = { true }
 
     /// Whether non-iTerm2 (non-focusable) sessions should be announced at all.
     /// When true they fire a desktop notification via `onNotify`; when false
@@ -45,6 +52,11 @@ final class ReminderCoordinator {
     /// per session so an older session's toast still queues on its own schedule
     /// even after a newer one takes over the shared panel.
     private var timers: [UUID: ToastTimer] = [:]
+
+    /// sessionUUID → last-applied pane background hex. In-memory only (cleared on
+    /// app restart). Lets Stop backfill color sessions that predate the app and
+    /// skip repeated coloring; a changed project hex re-applies. (R8)
+    private var coloredSessions: [String: String] = [:]
 
     init(
         store: ReminderStore,
@@ -69,15 +81,9 @@ final class ReminderCoordinator {
     /// but never becomes a tab.
     func handle(_ p: NotifyPayload) {
         if p.isSessionStart {
-            // Pane-coloring trigger, not a reminder: pick the project's color
-            // slot + worktree shade, then hand the dark background hex to the
-            // pane colorer.
+            // Pane-coloring trigger, not a reminder.
             usage?.probeHudCache()
-            let identity = ReminderIdentity(repoRoot: p.repoRoot, branch: p.branch, cwd: p.cwd)
-            let index = store.assigner.colorIndex(for: identity.key)
-            let shade = PaneShade.level(branch: p.branch, isWorktree: p.isWorktree)
-            let hex = ReminderPalette.backgroundHex(at: index, shade: shade)
-            onSetPaneBackground?(p.sessionUUID, hex)
+            colorPaneIfNeeded(p)
             return
         }
         usage?.refreshIfStale()
@@ -89,11 +95,31 @@ final class ReminderCoordinator {
             }
             return
         }
+        // R8 backfill: color a pre-existing session's pane on Stop too (needs only
+        // the session id, not the findable probe below).
+        colorPaneIfNeeded(p)
         let probe = self.probe
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let findable = probe.canFind(p.sessionUUID)
             DispatchQueue.main.async { [weak self] in self?.present(p, findable: findable) }
         }
+    }
+
+    /// Color a session's pane when coloring is enabled, the session is focusable
+    /// (has an iTerm2 pane), and the project hex differs from what was last
+    /// applied to that session (or was never applied). Shared by the SessionStart
+    /// trigger and the Stop backfill path; the hex-keyed dedup avoids repeated
+    /// script spawns for an unchanged session. (R8)
+    private func colorPaneIfNeeded(_ p: NotifyPayload) {
+        guard isPaneColoringEnabled(), p.focusable else { return }
+        let identity = ReminderIdentity(repoRoot: p.repoRoot, branch: p.branch, cwd: p.cwd)
+        let hex = ReminderPalette.backgroundHex(
+            at: store.assigner.colorIndex(for: identity.key),
+            shade: PaneShade.level(branch: p.branch, isWorktree: p.isWorktree)
+        )
+        guard coloredSessions[p.sessionUUID] != hex else { return }
+        coloredSessions[p.sessionUUID] = hex
+        onSetPaneBackground?(p.sessionUUID, hex)
     }
 
     /// Body text for a non-iTerm2 desktop notification: the reply past its first
