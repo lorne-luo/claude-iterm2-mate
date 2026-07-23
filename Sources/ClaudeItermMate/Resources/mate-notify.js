@@ -219,12 +219,9 @@ function main(raw) {
 
   const isSdk = (process.env.CLAUDE_CODE_ENTRYPOINT || "").startsWith("sdk");
   if (process.platform !== "darwin") return;
-  // SDK / headless runs have no interactive terminal to jump to or color —
-  // a plain desktop notification is the only sensible response.
-  if (isSdk) {
-    notifyMacOS(title, summary);
-    return;
-  }
+  // SDK / headless runs have no interactive terminal to jump to — stay silent
+  // rather than firing an osascript desktop notification.
+  if (isSdk) return;
 
   // Non-iTerm2 sessions (VS Code terminal, tmux, Terminal.app, …) still go to
   // the app, marked non-focusable: the app shows a tab you can dismiss but
