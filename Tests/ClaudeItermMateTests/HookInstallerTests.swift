@@ -196,4 +196,68 @@ final class HookInstallerTests: XCTestCase {
             "node \"\(path)\" --event notification"
         )
     }
+
+    // MARK: - AskUserQuestion (PreToolUse + PostToolUse)
+
+    private let askCommand =
+        "node \"/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js\" --event ask"
+    private let askDoneCommand =
+        "node \"/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js\" --event ask-done"
+
+    func testAddsAskHooksWithAskUserQuestionMatcher() {
+        var s = HookInstaller.settingsByAddingHook(
+            [:], command: askCommand, event: "PreToolUse", marker: notifMarker, matcher: "AskUserQuestion"
+        )
+        s = HookInstaller.settingsByAddingHook(
+            s, command: askDoneCommand, event: "PostToolUse", marker: notifMarker, matcher: "AskUserQuestion"
+        )
+        let pre = groups(s, event: "PreToolUse")
+        let post = groups(s, event: "PostToolUse")
+        XCTAssertEqual(pre.map(\.command), [askCommand])
+        XCTAssertEqual(pre.first?.matcher, "AskUserQuestion")
+        XCTAssertEqual(post.map(\.command), [askDoneCommand])
+        XCTAssertEqual(post.first?.matcher, "AskUserQuestion")
+    }
+
+    func testAskHooksIdempotent() {
+        var s = HookInstaller.settingsByAddingHook(
+            [:], command: askCommand, event: "PreToolUse", marker: notifMarker, matcher: "AskUserQuestion"
+        )
+        s = HookInstaller.settingsByAddingHook(
+            s, command: askCommand, event: "PreToolUse", marker: notifMarker, matcher: "AskUserQuestion"
+        )
+        XCTAssertEqual(groups(s, event: "PreToolUse").count, 1)
+    }
+
+    // All four events share the mate-notify.js marker; per-event scoping must
+    // keep them independent on both install and removal.
+    func testFourEventsCoexistWithoutCrossDeletion() {
+        var s = HookInstaller.settingsByAddingHook([:], command: command) // Stop
+        s = HookInstaller.settingsByAddingHook(
+            s, command: notifCommand, event: "Notification", marker: notifMarker, matcher: "permission_prompt"
+        )
+        s = HookInstaller.settingsByAddingHook(
+            s, command: askCommand, event: "PreToolUse", marker: notifMarker, matcher: "AskUserQuestion"
+        )
+        s = HookInstaller.settingsByAddingHook(
+            s, command: askDoneCommand, event: "PostToolUse", marker: notifMarker, matcher: "AskUserQuestion"
+        )
+        XCTAssertEqual(stopCommands(s), [command])
+        XCTAssertEqual(groups(s, event: "Notification").map(\.command), [notifCommand])
+        XCTAssertEqual(groups(s, event: "PreToolUse").map(\.command), [askCommand])
+        XCTAssertEqual(groups(s, event: "PostToolUse").map(\.command), [askDoneCommand])
+
+        // Removing PreToolUse leaves the other three untouched.
+        let r = HookInstaller.settingsByRemovingHook(s, event: "PreToolUse", marker: notifMarker)
+        XCTAssertTrue(groups(r, event: "PreToolUse").isEmpty)
+        XCTAssertEqual(stopCommands(r), [command])
+        XCTAssertEqual(groups(r, event: "Notification").map(\.command), [notifCommand])
+        XCTAssertEqual(groups(r, event: "PostToolUse").map(\.command), [askDoneCommand])
+    }
+
+    func testAskHookCommandFormats() {
+        let path = "/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js"
+        XCTAssertEqual(HookInstaller.askHookCommand(scriptPath: path), "node \"\(path)\" --event ask")
+        XCTAssertEqual(HookInstaller.askDoneHookCommand(scriptPath: path), "node \"\(path)\" --event ask-done")
+    }
 }

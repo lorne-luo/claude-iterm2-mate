@@ -86,6 +86,11 @@ final class ReminderCoordinator {
             colorPaneIfNeeded(p)
             return
         }
+        if p.isResolve {
+            // AskUserQuestion answered (PostToolUse): clear its waiting tab.
+            store.remove(sessionUUID: p.sessionUUID)
+            return
+        }
         usage?.refreshIfStale()
         if !p.focusable {
             // Non-iTerm2: no pane to jump to, so never a tab. Announce with a
@@ -136,6 +141,16 @@ final class ReminderCoordinator {
 
     private func present(_ p: NotifyPayload, findable: Bool) {
         let session = p.sessionUUID
+        // AskUserQuestion fires a rich `question` PreToolUse *and* a generic
+        // `permission_prompt` Notification for the same session. Never let the
+        // generic waiting event clobber a live question tab — drop it. A
+        // completed event (Stop self-heal) is not dropped, so the tab still
+        // resolves at turn end.
+        if !p.isQuestion, p.sessionStatus == .waiting,
+           let existing = store.items.first(where: { $0.sessionUUID == session }),
+           existing.kind == .question {
+            return
+        }
         // R4: a session already showing a waiting state (a queued waiting tab or
         // the waiting toast currently on screen) must not re-toast on a follow-up
         // waiting event — e.g. a permission storm. Refresh the tab's content in
@@ -148,7 +163,9 @@ final class ReminderCoordinator {
                 sessionUUID: session,
                 summary: p.summary,
                 fullMessage: p.fullMessage,
-                timestamp: p.timestamp
+                timestamp: p.timestamp,
+                kind: p.isQuestion ? .question : .plain,
+                questions: p.questions ?? []
             )
             return
         }

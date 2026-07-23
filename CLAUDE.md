@@ -48,12 +48,30 @@ AppKit shell (`main.swift` + `AppDelegate`) hosts SwiftUI views inside borderles
 ```
 Node Stop hook (Resources/mate-notify.js)                  -> status: completed | waiting
 Node Notification hook (mate-notify.js --event notification) -> status: waiting (permission_prompt)
+Node PreToolUse hook  (mate-notify.js --event ask)         -> type: question (+ questions[])
+Node PostToolUse hook (mate-notify.js --event ask-done)    -> type: resolve (clear the tab)
   --unix socket, one JSON message per connection (close = frame boundary)-->
 NotifyServer  -> NotifyPayload.decode  -> ReminderStore.upsert
   -> ReminderCoordinator (owns the toast timer; toasting -> queued)
   -> ToastPanel (4s) --fly-in--> TabStripPanel (right edge) --hover--> DetailPanel
 Click a tab -> ItermFocusAction (focus / focus+maximize) -> ReminderStore.remove
+Answer a question in DetailPanel -> ItermSendTextAction (it2 session send) -> pane
 ```
+
+**AskUserQuestion** (`--event ask` / `ask-done`): a PreToolUse hook (matcher
+`AskUserQuestion`) surfaces the question + options as a rich waiting tab
+(`ReminderItem.kind == .question`, carrying `NotifyPayload.questions`); the
+DetailPanel renders answer controls (`QuestionAnswerView`: option buttons, a
+free-text field, "Chat about this"). Answering injects keystrokes into the
+owning pane via `ItermSendTextAction` (`it2 session send -s <uuid>`); the exact
+TUI sequences (single digit selects+submits; free text = "Type something" row +
+text + `\r`; multiSelect = digit toggles + right-arrow + Submit) were verified
+against the real TUI. AskUserQuestion also fires a generic `permission_prompt`
+Notification for the same session — the coordinator drops that generic waiting
+event when a `.question` tab already exists so it cannot clobber the rich detail.
+A PostToolUse `resolve` clears the tab on answer (Stop upsert is the backstop).
+Interactive answering is limited to single-question prompts; multi-question
+prompts fall back to "Chat about this" (jump).
 
 **Session status** (`Store/SessionStatus.swift`): a `completed`/`waiting` dimension
 orthogonal to `phase`. A **waiting** tab (session needs the user to act) renders a
@@ -74,7 +92,8 @@ Key pieces (all under `Sources/ClaudeItermMate/`):
 - **Identity/ReminderPalette** — 12-color categorical palette; worktree tabs render a lightened variant of the project color; glyph foreground flips black/white by luminance.
 - **Panels/PanelFactory** — the shared `NSPanel` recipe: borderless + `.nonactivatingPanel`, floating, clear background, `canJoinAllSpaces`/`fullScreenAuxiliary`, `canBecomeKey` only when interaction is needed. ToastPanel / TabStripPanel / DetailPanel build on it. DetailPanel measures content to size itself.
 - **Actions/ItermFocusAction** — jumps to the pane. Maximize-on-click (menu toggle, `UserDefaults`) chooses between the machine-local `~/.claude/scripts/iterm-focus-pane.py` (focus + maximize) and the `it2` CLI (`app activate` + `session focus`, focus only). `plan()` is pure/tested.
-- **Hook/HookStatus + Hook/HookInstaller** — the menu status light. HookStatus reads `~/.claude/settings.json`; HookInstaller copies the bundled scripts to App Support and appends three hooks — Stop (`mate-notify.js`), SessionStart (`mate-session-start.js`), and Notification (`mate-notify.js --event notification`, matcher `permission_prompt`) — each idempotent, append-only, preserving other hooks. Markers are per-event, so Stop and Notification sharing `mate-notify.js` never cross-delete. The canonical scripts live under `Sources/ClaudeItermMate/Resources/` and load at runtime via `Bundle.module`. **Upgrade path**: `AppDelegate` re-runs the idempotent `install()` on launch when the hook is already installed, so a new bundled hook/script (e.g. the Notification hook) propagates to existing users without a manual remove+reinstall (the menu only offers Install when *not* installed).
+- **Actions/ItermSendTextAction** — answers an AskUserQuestion by injecting keystrokes into the owning pane via `it2 session send -s <uuid> <fragment>` (no newline; an explicit `\r` submits). `injectionSequence(_:optionCount:)` and `arguments(...)` are pure/tested; the sequences were verified against the real TUI (see the AskUserQuestion data-flow note above). Gated on `focusable`.
+- **Hook/HookStatus + Hook/HookInstaller** — the menu status light. HookStatus reads `~/.claude/settings.json`; HookInstaller copies the bundled scripts to App Support and appends five hooks — Stop (`mate-notify.js`), SessionStart (`mate-session-start.js`), Notification (`mate-notify.js --event notification`, matcher `permission_prompt`), PreToolUse (`--event ask`, matcher `AskUserQuestion`), and PostToolUse (`--event ask-done`, matcher `AskUserQuestion`) — each idempotent, append-only, preserving other hooks. Markers are per-event, so the four hooks sharing `mate-notify.js` never cross-delete. HookStatus still probes only the Stop hook as the single opt-in signal. The canonical scripts live under `Sources/ClaudeItermMate/Resources/` and load at runtime via `Bundle.module`. **Upgrade path**: `AppDelegate` re-runs the idempotent `install()` on launch when the hook is already installed, so a new bundled hook/script (e.g. the Notification hook) propagates to existing users without a manual remove+reinstall (the menu only offers Install when *not* installed).
 - **MenuBar/MenuBarController** — `NSMenuDelegate`; rebuilds on `menuNeedsUpdate` so the hook light reflects live settings.json. `menu.autoenablesItems = false` is required — otherwise AppKit re-enables items by target and the "disabled until installed" state silently breaks.
 
 ## Constraints

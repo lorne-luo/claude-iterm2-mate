@@ -37,7 +37,7 @@ final class ReminderStoreTests: XCTestCase {
         let store = ReminderStore()
         let token = store.upsert(payload(summary: "old", status: "waiting"))
         store.queueIfCurrent(sessionUUID: "S1", token: token)
-        store.refreshContent(sessionUUID: "S1", summary: "new", fullMessage: "new body", timestamp: 9.0)
+        store.refreshContent(sessionUUID: "S1", summary: "new", fullMessage: "new body", timestamp: 9.0, kind: .plain, questions: [])
         XCTAssertEqual(store.items[0].summary, "new")
         XCTAssertEqual(store.items[0].fullMessage, "new body")
         XCTAssertEqual(store.items[0].timestamp, 9.0)
@@ -48,7 +48,7 @@ final class ReminderStoreTests: XCTestCase {
     func testRefreshContentIgnoresUnknownSession() {
         let store = ReminderStore()
         _ = store.upsert(payload(session: "S1"))
-        store.refreshContent(sessionUUID: "NOPE", summary: "x", fullMessage: "x", timestamp: 2.0)
+        store.refreshContent(sessionUUID: "NOPE", summary: "x", fullMessage: "x", timestamp: 2.0, kind: .plain, questions: [])
         XCTAssertEqual(store.items[0].summary, "hi", "unknown session is a no-op")
     }
 

@@ -7,7 +7,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { classifyStopStatus, shouldSendNotification, isNotificationMode } =
+const { classifyStopStatus, shouldSendNotification, eventMode, buildQuestionFields } =
   require("../../Sources/ClaudeItermMate/Resources/mate-notify.js");
 
 test("classifyStopStatus: trailing question mark -> waiting", () => {
@@ -75,8 +75,46 @@ test("shouldSendNotification: only permission_prompt sends", () => {
   assert.strictEqual(shouldSendNotification(null), false);
 });
 
-test("isNotificationMode: detects --event notification", () => {
-  assert.strictEqual(isNotificationMode(["--event", "notification"]), true);
-  assert.strictEqual(isNotificationMode(["--event", "other"]), false);
-  assert.strictEqual(isNotificationMode([]), false);
+test("eventMode: maps --event <mode>, defaults to stop", () => {
+  assert.strictEqual(eventMode(["--event", "notification"]), "notification");
+  assert.strictEqual(eventMode(["--event", "ask"]), "ask");
+  assert.strictEqual(eventMode(["--event", "ask-done"]), "ask-done");
+  assert.strictEqual(eventMode(["--event", "other"]), "stop");
+  assert.strictEqual(eventMode([]), "stop");
+});
+
+test("buildQuestionFields: derives summary/full_message/questions from tool_input", () => {
+  const input = {
+    tool_input: {
+      questions: [
+        {
+          question: "你最喜欢哪种颜色?",
+          header: "颜色",
+          multiSelect: false,
+          options: [
+            { label: "红色", description: "热情" },
+            { label: "蓝色", description: "冷静" },
+          ],
+        },
+      ],
+    },
+  };
+  const f = buildQuestionFields(input, "/x/proj", true, "S1");
+  assert.strictEqual(f.type, "question");
+  assert.strictEqual(f.status, "waiting");
+  assert.strictEqual(f.summary, "你最喜欢哪种颜色?");
+  assert.strictEqual(f.title, "proj");
+  assert.strictEqual(f.session_uuid, "S1");
+  assert.strictEqual(f.questions.length, 1);
+  assert.strictEqual(f.questions[0].options.length, 2);
+  assert.strictEqual(f.questions[0].options[0].label, "红色");
+  assert.ok(f.full_message.includes("1. 红色 — 热情"));
+  assert.ok(f.full_message.includes("2. 蓝色 — 冷静"));
+});
+
+test("buildQuestionFields: tolerates missing/empty questions", () => {
+  const f = buildQuestionFields({}, "/x/proj", true, "S1");
+  assert.strictEqual(f.type, "question");
+  assert.deepStrictEqual(f.questions, []);
+  assert.strictEqual(f.summary, "Waiting for input");
 });

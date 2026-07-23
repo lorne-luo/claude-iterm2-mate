@@ -44,6 +44,16 @@ struct HookInstaller {
         "node \"\(scriptPath)\" --event notification"
     }
 
+    /// The PreToolUse (AskUserQuestion) command line: the same script in ask mode.
+    static func askHookCommand(scriptPath: String) -> String {
+        "node \"\(scriptPath)\" --event ask"
+    }
+
+    /// The PostToolUse (AskUserQuestion) command line: clears the waiting tab.
+    static func askDoneHookCommand(scriptPath: String) -> String {
+        "node \"\(scriptPath)\" --event ask-done"
+    }
+
     static func settingsByAddingHook(
         _ json: [String: Any],
         command: String,
@@ -165,6 +175,24 @@ struct HookInstaller {
             marker: "mate-notify.js",
             matcher: "permission_prompt"
         )
+        // AskUserQuestion: PreToolUse surfaces the question (with options) as a
+        // rich waiting tab; PostToolUse clears it once answered. Both reuse
+        // mate-notify.js (marker = script name, per-event scoped) so they stay
+        // distinct from the Stop / Notification hooks that share the same script.
+        updated = Self.settingsByAddingHook(
+            updated,
+            command: Self.askHookCommand(scriptPath: Self.scriptDestURL.path),
+            event: "PreToolUse",
+            marker: "mate-notify.js",
+            matcher: "AskUserQuestion"
+        )
+        updated = Self.settingsByAddingHook(
+            updated,
+            command: Self.askDoneHookCommand(scriptPath: Self.scriptDestURL.path),
+            event: "PostToolUse",
+            marker: "mate-notify.js",
+            matcher: "AskUserQuestion"
+        )
         try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         var data = try JSONSerialization.data(
             withJSONObject: updated,
@@ -198,6 +226,12 @@ struct HookInstaller {
             )
             updated = Self.settingsByRemovingHook(
                 updated, event: "Notification", marker: "mate-notify.js"
+            )
+            updated = Self.settingsByRemovingHook(
+                updated, event: "PreToolUse", marker: "mate-notify.js"
+            )
+            updated = Self.settingsByRemovingHook(
+                updated, event: "PostToolUse", marker: "mate-notify.js"
             )
             var out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
             out.append(0x0A)

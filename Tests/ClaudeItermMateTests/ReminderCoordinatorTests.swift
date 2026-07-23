@@ -288,4 +288,58 @@ final class ReminderCoordinatorTests: XCTestCase {
         coordinator.handle(sessionStartPayload())
         XCTAssertTrue(usage.hudCacheAvailable, "session_start must probe the hud cache")
     }
+
+    // MARK: - AskUserQuestion
+
+    private func decode(_ dict: [String: Any]) -> NotifyPayload {
+        NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: dict))!
+    }
+
+    private func questionPayload(session: String = "S1") -> NotifyPayload {
+        decode([
+            "session_uuid": session, "cwd": "/tmp/proj", "title": "proj",
+            "summary": "Pick?", "full_message": "Pick?", "timestamp": 1.0,
+            "type": "question", "status": "waiting",
+            "questions": [[
+                "question": "Pick?", "header": "H", "multiSelect": false,
+                "options": [["label": "A", "description": ""], ["label": "B", "description": ""]],
+            ]],
+        ])
+    }
+
+    func testResolveRemovesTab() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.2)
+        coordinator.handle(questionPayload())
+        try await settle()
+        XCTAssertEqual(coordinator.store.items.count, 1)
+        XCTAssertEqual(coordinator.store.items.first?.kind, .question)
+
+        coordinator.handle(decode([
+            "session_uuid": "S1", "cwd": "/tmp/proj", "timestamp": 2.0, "type": "resolve",
+        ]))
+        XCTAssertTrue(coordinator.store.items.isEmpty, "resolve must remove the tab")
+    }
+
+    func testQuestionNotOverwrittenByGenericPermissionWaiting() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.2)
+        coordinator.handle(questionPayload())
+        try await settle()
+
+        // The generic permission_prompt Notification for the same session must
+        // not clobber the rich question tab.
+        coordinator.handle(decode([
+            "session_uuid": "S1", "cwd": "/tmp/proj", "title": "proj",
+            "summary": "Claude needs your permission",
+            "full_message": "Claude needs your permission",
+            "timestamp": 3.0, "status": "waiting",
+        ]))
+        try await settle()
+
+        let item = coordinator.store.items.first
+        XCTAssertEqual(item?.kind, .question)
+        XCTAssertEqual(item?.summary, "Pick?", "generic waiting must not overwrite the question")
+        XCTAssertEqual(item?.questions.count, 1)
+    }
 }

@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var detail = DetailPanel(usage: usage)
     private let focusAction = ItermFocusAction()
     private let bgColorAction = ItermBgColorAction()
+    private let sendTextAction = ItermSendTextAction()
     private var menuBar: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -40,6 +41,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onClearAll: { [weak self] in self?.store.removeAll() }
         )
         detail.onClose = { [weak self] item in self?.store.remove(sessionUUID: item.sessionUUID) }
+        // Answer an AskUserQuestion by injecting keystrokes into the owning pane
+        // (off-main). Optimistically remove the tab; the PostToolUse `resolve`
+        // hook also clears it once the answer lands.
+        let sendTextAction = self.sendTextAction
+        detail.onAnswer = { [weak self] item, answer, optionCount in
+            DispatchQueue.global(qos: .userInitiated).async {
+                sendTextAction.answer(sessionUUID: item.sessionUUID, answer: answer, optionCount: optionCount)
+            }
+            self?.store.remove(sessionUUID: item.sessionUUID)
+        }
+        // "Chat about this": jump to and maximize the pane, then drop the tab.
+        detail.onChat = { [weak self] item in
+            self?.focusAction.focus(sessionUUID: item.sessionUUID, maximize: true)
+            self?.store.remove(sessionUUID: item.sessionUUID)
+        }
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
         }

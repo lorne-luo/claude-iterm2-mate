@@ -255,9 +255,9 @@ function handleNotification(raw) {
   const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd();
   if (path.basename(cwd) === "observer-sessions") return;
 
-  const toolName = input.details && typeof input.details.tool_name === "string"
-    ? input.details.tool_name
-    : "";
+  // The Notification payload carries only `message` (verified: no tool_name /
+  // tool_input / details). Use it directly as summary/body; a permission prompt
+  // is just "Claude needs your permission".
   const messageText = typeof input.message === "string" ? input.message : "";
 
   const { focusable, sessionUUID } = deriveSession(input, cwd);
@@ -268,23 +268,109 @@ function handleNotification(raw) {
   if (!focusable) return;
   const fields = baseFields(input, cwd, focusable, sessionUUID);
   fields.title = path.basename(cwd);
-  fields.summary = extractSummary(toolName ? `Waiting: ${toolName}` : messageText || "Waiting for input");
+  fields.summary = extractSummary(messageText || "Waiting for input");
   fields.full_message = messageText;
   fields.status = "waiting";
 
   sendPayload(fields, null);
 }
 
-// Dispatch by CLI mode: `--event notification` runs the notification path,
-// otherwise the default Stop path. Only when run directly — when required as a
-// module (tests) just export the pure helpers.
-function isNotificationMode(argv) {
-  const i = argv.indexOf("--event");
-  return i >= 0 && argv[i + 1] === "notification";
+// Build the wire fields for an AskUserQuestion PreToolUse event. Pure so it is
+// unit-testable. Reads `tool_input.questions` (verified shape: each question has
+// question/header/options[label,description]/multiSelect). summary = first
+// question text; full_message = questions + their options as a human-readable
+// fallback; `questions` carries the structured data the app renders as buttons.
+function buildQuestionFields(input, cwd, focusable, sessionUUID) {
+  const questions = Array.isArray(input.tool_input && input.tool_input.questions)
+    ? input.tool_input.questions
+    : [];
+  const norm = questions.map((q) => ({
+    question: typeof q.question === "string" ? q.question : "",
+    header: typeof q.header === "string" ? q.header : "",
+    multiSelect: !!q.multiSelect,
+    options: Array.isArray(q.options)
+      ? q.options.map((o) => ({
+          label: typeof o.label === "string" ? o.label : "",
+          description: typeof o.description === "string" ? o.description : "",
+        }))
+      : [],
+  }));
+  const firstQ = norm.find((q) => q.question) || norm[0];
+  const summary = extractSummary(firstQ ? firstQ.question : "Waiting for input");
+  const full_message = norm
+    .map((q) => {
+      const lines = [q.question];
+      q.options.forEach((o, i) => {
+        lines.push(o.description ? `${i + 1}. ${o.label} — ${o.description}` : `${i + 1}. ${o.label}`);
+      });
+      return lines.join("\n");
+    })
+    .join("\n\n");
+
+  const fields = baseFields(input, cwd, focusable, sessionUUID);
+  fields.title = path.basename(cwd);
+  fields.type = "question";
+  fields.summary = summary;
+  fields.full_message = full_message;
+  fields.questions = norm;
+  fields.status = "waiting";
+  return fields;
 }
 
+// --event ask: AskUserQuestion fired (PreToolUse). Surface a rich "waiting" tab
+// with the question + options. Only iTerm2 (focusable) sessions; no desktop
+// fallback (same contract as notification mode).
+function handleAsk(raw) {
+  let input = {};
+  try {
+    input = raw.trim() ? JSON.parse(raw) : {};
+  } catch {
+    return;
+  }
+  if (process.platform !== "darwin") return;
+  if ((process.env.CLAUDE_CODE_ENTRYPOINT || "").startsWith("sdk")) return;
+  const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd();
+  if (path.basename(cwd) === "observer-sessions") return;
+  const { focusable, sessionUUID } = deriveSession(input, cwd);
+  if (!focusable) return;
+  sendPayload(buildQuestionFields(input, cwd, focusable, sessionUUID), null);
+}
+
+// --event ask-done: AskUserQuestion answered (PostToolUse). Tell the app to
+// remove the waiting tab for this session (event-driven clear).
+function handleAskDone(raw) {
+  let input = {};
+  try {
+    input = raw.trim() ? JSON.parse(raw) : {};
+  } catch {
+    return;
+  }
+  if (process.platform !== "darwin") return;
+  if ((process.env.CLAUDE_CODE_ENTRYPOINT || "").startsWith("sdk")) return;
+  const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd();
+  const { focusable, sessionUUID } = deriveSession(input, cwd);
+  if (!focusable) return;
+  sendPayload({ type: "resolve", session_uuid: sessionUUID, cwd, timestamp: Date.now() }, null);
+}
+
+// Dispatch by CLI mode from `--event <mode>`: `notification` | `ask` |
+// `ask-done`, otherwise the default Stop path (`stop`). Only when run directly —
+// when required as a module (tests) just export the pure helpers.
+function eventMode(argv) {
+  const i = argv.indexOf("--event");
+  const v = i >= 0 ? argv[i + 1] : undefined;
+  return v === "notification" || v === "ask" || v === "ask-done" ? v : "stop";
+}
+
+const HANDLERS = {
+  notification: handleNotification,
+  ask: handleAsk,
+  "ask-done": handleAskDone,
+  stop: main,
+};
+
 if (require.main === module) {
-  const handler = isNotificationMode(process.argv.slice(2)) ? handleNotification : main;
+  const handler = HANDLERS[eventMode(process.argv.slice(2))] || main;
   let data = "";
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (chunk) => {
@@ -295,7 +381,8 @@ if (require.main === module) {
   module.exports = {
     classifyStopStatus,
     shouldSendNotification,
-    isNotificationMode,
+    eventMode,
+    buildQuestionFields,
     extractSummary,
   };
 }
