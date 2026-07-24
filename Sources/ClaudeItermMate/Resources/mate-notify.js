@@ -358,19 +358,31 @@ function handleAskDone(raw) {
   sendPayload({ type: "resolve", session_uuid: sessionUUID, cwd, timestamp: Date.now() }, null);
 }
 
+// --event session-end: the Claude Code session ended (SessionEnd, any reason).
+// Clear its reminder tab. Identical to ask-done — same `resolve` payload and
+// same guards (darwin, not SDK, focusable). Deliberately does NOT touch the
+// app's color/inject-once memory: the iTerm2 pane may still be alive and reused.
+function handleSessionEnd(raw) {
+  handleAskDone(raw);
+}
+
 // Dispatch by CLI mode from `--event <mode>`: `notification` | `ask` |
-// `ask-done`, otherwise the default Stop path (`stop`). Only when run directly —
-// when required as a module (tests) just export the pure helpers.
+// `ask-done` | `session-end`, otherwise the default Stop path (`stop`). Only
+// when run directly — when required as a module (tests) just export the pure
+// helpers.
 function eventMode(argv) {
   const i = argv.indexOf("--event");
   const v = i >= 0 ? argv[i + 1] : undefined;
-  return v === "notification" || v === "ask" || v === "ask-done" ? v : "stop";
+  return v === "notification" || v === "ask" || v === "ask-done" || v === "session-end"
+    ? v
+    : "stop";
 }
 
 const HANDLERS = {
   notification: handleNotification,
   ask: handleAsk,
   "ask-done": handleAskDone,
+  "session-end": handleSessionEnd,
   stop: main,
 };
 

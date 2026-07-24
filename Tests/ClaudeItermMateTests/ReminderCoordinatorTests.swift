@@ -30,6 +30,22 @@ final class ReminderCoordinatorTests: XCTestCase {
         func canFind(_ uuid: String) -> Bool { findable }
     }
 
+    /// Probe with a mutable live set for reconcile tests. `live == nil` models a
+    /// failed/unavailable query (reconcile must skip GC); `findableWhenUnknown`
+    /// lets a nil-live test still build tabs so we can assert they are retained.
+    /// Read off-main, mutated on main between serialized `settle()`s — safe under
+    /// the tests' timing, hence `@unchecked Sendable`.
+    final class ReconcileProbe: ItermSessionProbe, @unchecked Sendable {
+        var live: Set<String>?
+        let findableWhenUnknown: Bool
+        init(live: Set<String>?, findableWhenUnknown: Bool = true) {
+            self.live = live
+            self.findableWhenUnknown = findableWhenUnknown
+        }
+        func canFind(_ uuid: String) -> Bool { live?.contains(uuid) ?? findableWhenUnknown }
+        func liveSessionIDs() -> Set<String>? { live }
+    }
+
     private func payload(session: String = "S1", repoRoot: String = "/tmp/proj") -> NotifyPayload {
         NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
             "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
@@ -426,5 +442,73 @@ final class ReminderCoordinatorTests: XCTestCase {
         coordinator.isPaneColoringEnabled = { true }
         coordinator.handle(payload())
         XCTAssertEqual(injected, ["S1"], "session was not marked while disabled → injects once enabled")
+    }
+
+    // MARK: - Reconcile GC of closed iTerm2 sessions
+
+    // R8: a reminder event whose live set omits a prior session GCs that dead
+    // tab; a session still in the set is retained.
+    func testReconcileRemovesDeadTabKeepsLive() async throws {
+        let toast = SpyToast()
+        let probe = ReconcileProbe(live: ["A", "B"])
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastDuration: 0.3,
+                                              toastPanel: toast, probe: probe)
+        coordinator.handle(payload(session: "A"))
+        try await settle()
+        try await Task.sleep(for: .milliseconds(400)) // A demotes to a queued tab
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["A"])
+
+        probe.live = ["B"] // A's pane is closed, set before the next event
+        coordinator.handle(payload(session: "B"))
+        try await settle()
+        XCTAssertFalse(coordinator.store.items.contains { $0.sessionUUID == "A" },
+                       "closed pane's dead tab is reconciled away")
+        XCTAssertTrue(coordinator.store.items.contains { $0.sessionUUID == "B" },
+                      "live session B is retained")
+    }
+
+    // Decision: when the live set is unknown (probe failure), reconcile is
+    // skipped — a live tab must NOT be wiped by a transient it2 failure.
+    func testReconcileSkippedWhenLiveSetUnknown() async throws {
+        let toast = SpyToast()
+        let probe = ReconcileProbe(live: nil, findableWhenUnknown: true)
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastDuration: 0.3,
+                                              toastPanel: toast, probe: probe)
+        coordinator.handle(payload(session: "A"))
+        try await settle()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["A"])
+
+        coordinator.handle(payload(session: "B"))
+        try await settle()
+        XCTAssertTrue(coordinator.store.items.contains { $0.sessionUUID == "A" },
+                      "nil live set must not GC an existing tab")
+    }
+
+    // R7: a closed session's color hex + inject-once flag are GC'd, so if the
+    // same session id reappears it re-colors and re-injects.
+    func testReconcileClearsColorAndInjectFlags() async throws {
+        let toast = SpyToast()
+        let probe = ReconcileProbe(live: ["A", "B"])
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastDuration: 10,
+                                              toastPanel: toast, probe: probe)
+        var injected: [String] = []
+        var colored: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.onSetPaneBackground = { session, _ in colored.append(session) }
+
+        coordinator.handle(payload(session: "A"))
+        try await settle()
+        probe.live = ["B"] // A closed, set before the next event drops its flags
+        coordinator.handle(payload(session: "B"))
+        try await settle()
+        probe.live = ["A", "B"] // A reappears (same id), set before its re-event
+        coordinator.handle(payload(session: "A"))
+        try await settle()
+
+        XCTAssertEqual(injected.filter { $0 == "A" }.count, 2,
+                       "A's inject-once flag was GC'd, so it injects again")
+        XCTAssertEqual(colored.filter { $0 == "A" }.count, 2,
+                       "A's color hex was GC'd, so it colors again")
     }
 }

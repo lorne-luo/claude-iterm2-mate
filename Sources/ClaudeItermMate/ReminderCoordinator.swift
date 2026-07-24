@@ -133,8 +133,36 @@ final class ReminderCoordinator {
         injectColorIfNeeded(p)
         let probe = self.probe
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let findable = probe.canFind(p.sessionUUID)
-            DispatchQueue.main.async { [weak self] in self?.present(p, findable: findable) }
+            // One off-main probe per reminder: the full live-session set doubles
+            // as the findability answer (`contains`) and the reconcile input, so
+            // there is no extra `it2` call. `live?.contains ?? canFind` short-
+            // circuits — when `live` is known the second spawn is never made; a
+            // stub whose `liveSessionIDs()` defaults to nil falls back to canFind
+            // and skips reconcile, preserving existing test behavior.
+            let live = probe.liveSessionIDs()
+            let findable = live?.contains(p.sessionUUID) ?? probe.canFind(p.sessionUUID)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let live { self.reconcile(live: live) }
+                self.present(p, findable: findable)
+            }
+        }
+    }
+
+    /// GC in-memory session state against the live iTerm2 session set: a closed
+    /// pane drops out of `live`, so its color hex, inject-once flag, and any
+    /// dead tab are removed. Called only when the live set is known
+    /// (`liveSessionIDs() != nil`), never on probe failure — a transient `it2`
+    /// error must not wipe live sessions. Runs on the main actor before
+    /// `present`, so the current event's session (if alive) is in `live` and
+    /// survives; if it is already closed it is dropped and `present` builds no
+    /// tab (findable == false). The dead-tab sweep also backstops a force-closed
+    /// pane, where `SessionEnd` may never fire to clear the tab via `resolve`.
+    private func reconcile(live: Set<String>) {
+        coloredSessions = coloredSessions.filter { live.contains($0.key) }
+        colorInjectedSessions = colorInjectedSessions.filter { live.contains($0) }
+        for dead in store.items.map(\.sessionUUID) where !live.contains(dead) {
+            store.remove(sessionUUID: dead)
         }
     }
 

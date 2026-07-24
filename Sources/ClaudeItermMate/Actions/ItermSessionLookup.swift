@@ -5,6 +5,16 @@ import os
 /// a tab (and skip the jump) for a reminder whose pane is already gone.
 protocol ItermSessionProbe: Sendable {
     func canFind(_ uuid: String) -> Bool
+    /// The full set of live iTerm2 session ids, or `nil` when it cannot be
+    /// determined (probe unavailable / query failed). `nil` means "unknown", so
+    /// callers must NOT treat it as "no sessions" — reconcile skips GC on `nil`.
+    func liveSessionIDs() -> Set<String>?
+}
+
+extension ItermSessionProbe {
+    /// Default: unknown. Concrete probes that can enumerate sessions override
+    /// this; stubs inherit it and therefore never trigger reconcile GC.
+    func liveSessionIDs() -> Set<String>? { nil }
 }
 
 /// Queries live iTerm2 sessions via the `it2` CLI (`session list --json`),

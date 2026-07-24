@@ -79,6 +79,7 @@ test("eventMode: maps --event <mode>, defaults to stop", () => {
   assert.strictEqual(eventMode(["--event", "notification"]), "notification");
   assert.strictEqual(eventMode(["--event", "ask"]), "ask");
   assert.strictEqual(eventMode(["--event", "ask-done"]), "ask-done");
+  assert.strictEqual(eventMode(["--event", "session-end"]), "session-end");
   assert.strictEqual(eventMode(["--event", "other"]), "stop");
   assert.strictEqual(eventMode([]), "stop");
 });
