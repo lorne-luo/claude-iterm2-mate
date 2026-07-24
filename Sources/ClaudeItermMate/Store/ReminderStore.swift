@@ -6,6 +6,14 @@ enum ReminderPhase: Equatable {
     case queued
 }
 
+/// Whether a reminder is a plain notification/permission wait or an
+/// AskUserQuestion prompt (which carries `questions` and renders answer
+/// controls). Orthogonal to `status`; a question is always `.waiting`.
+enum ReminderKind: Equatable {
+    case plain
+    case question
+}
+
 struct ReminderItem: Identifiable, Equatable {
     let sessionUUID: String
     var cwd: String
@@ -16,6 +24,13 @@ struct ReminderItem: Identifiable, Equatable {
     var fullMessage: String
     var timestamp: Double
     var phase: ReminderPhase
+    /// Completed ("look when you can") vs waiting ("blocked, act now"). Drives
+    /// the amber tab accent. Orthogonal to `phase`.
+    var status: SessionStatus
+    /// Plain vs AskUserQuestion. Drives whether answer controls render.
+    var kind: ReminderKind
+    /// AskUserQuestion questions + options (empty unless `kind == .question`).
+    var questions: [NotifyPayload.Question]
     /// Palette slot + worktree lighten level, assigned by the shared
     /// `ColorAssigner` at upsert so tabs match the injected `/color` name.
     var colorIndex: Int
@@ -68,6 +83,9 @@ final class ReminderStore {
             fullMessage: p.fullMessage,
             timestamp: p.timestamp,
             phase: .toasting(token: token),
+            status: p.sessionStatus,
+            kind: p.isQuestion ? .question : .plain,
+            questions: p.questions ?? [],
             colorIndex: assigner.colorIndex(for: identity.key),
             lightenLevel: 0,
             focusable: p.focusable
@@ -93,6 +111,27 @@ final class ReminderStore {
             }
             for (level, i) in ordered.enumerated() { items[i].lightenLevel = level }
         }
+    }
+
+    /// Update an existing item's content in place (summary/message/timestamp)
+    /// without touching its phase, token, status, or color. Used when a session
+    /// already showing a waiting state gets a follow-up waiting event: the tab
+    /// refreshes but must not re-enter the toast cycle (no new token) or vanish
+    /// from the strip (phase stays `.queued`). No-op if the session is unknown.
+    func refreshContent(
+        sessionUUID: String,
+        summary: String,
+        fullMessage: String,
+        timestamp: Double,
+        kind: ReminderKind,
+        questions: [NotifyPayload.Question]
+    ) {
+        guard let i = items.firstIndex(where: { $0.sessionUUID == sessionUUID }) else { return }
+        items[i].summary = summary
+        items[i].fullMessage = fullMessage
+        items[i].timestamp = timestamp
+        items[i].kind = kind
+        items[i].questions = questions
     }
 
     func queueIfCurrent(sessionUUID: String, token: UUID) {

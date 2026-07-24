@@ -13,11 +13,16 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
 /// `canBecomeKey: true` panels take key status without activating the app,
 /// which SwiftUI buttons inside need in order to receive clicks.
 enum PanelFactory {
-    static func makePanel(frame: NSRect, canBecomeKey: Bool) -> NSPanel {
+    /// `editable: true` lets the panel become main as well as key, which the
+    /// field editor behind a SwiftUI `TextField` needs to accept keyboard input
+    /// (the AskUserQuestion answer field). Plain panels never become main so
+    /// they cannot steal the app's foreground focus.
+    static func makePanel(frame: NSRect, canBecomeKey: Bool, editable: Bool = false) -> NSPanel {
         final class KeyablePanel: NSPanel {
             var allowsKey = false
+            var allowsMain = false
             override var canBecomeKey: Bool { allowsKey }
-            override var canBecomeMain: Bool { false }
+            override var canBecomeMain: Bool { allowsMain }
         }
         let panel = KeyablePanel(
             contentRect: frame,
@@ -26,6 +31,7 @@ enum PanelFactory {
             defer: false
         )
         panel.allowsKey = canBecomeKey
+        panel.allowsMain = editable
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.isOpaque = false

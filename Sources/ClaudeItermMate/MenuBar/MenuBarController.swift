@@ -114,13 +114,37 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         login.image = symbol("power")
         menu.addItem(login)
         let nonIterm = NSMenuItem(
-            title: "Show Non-iTerm2 Sessions", action: #selector(toggleNonIterm(_:)), keyEquivalent: ""
+            title: "Notify Non-iTerm2 Sessions", action: #selector(toggleNonIterm(_:)), keyEquivalent: ""
         )
         nonIterm.target = self
         nonIterm.state = AppSettings.showNonIterm ? .on : .off
         nonIterm.isEnabled = installed
         nonIterm.image = symbol("macwindow.on.rectangle")
         menu.addItem(nonIterm)
+        let colorPanes = NSMenuItem(
+            title: "Color Session Panes", action: #selector(toggleColorPanes(_:)), keyEquivalent: ""
+        )
+        colorPanes.target = self
+        colorPanes.state = AppSettings.colorPanes ? .on : .off
+        colorPanes.isEnabled = installed
+        colorPanes.image = symbol("paintpalette")
+        menu.addItem(colorPanes)
+        let tabStrip = NSMenuItem(
+            title: "Show Tab Strip", action: #selector(toggleTabStrip(_:)), keyEquivalent: ""
+        )
+        tabStrip.target = self
+        tabStrip.state = AppSettings.showTabStrip ? .on : .off
+        tabStrip.isEnabled = installed
+        tabStrip.image = symbol("sidebar.right")
+        menu.addItem(tabStrip)
+        let playSound = NSMenuItem(
+            title: "Play Sound", action: #selector(togglePlaySound(_:)), keyEquivalent: ""
+        )
+        playSound.target = self
+        playSound.state = AppSettings.playSound ? .on : .off
+        playSound.isEnabled = installed
+        playSound.image = symbol("speaker.wave.2")
+        menu.addItem(playSound)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.image = symbol("xmark.circle")
@@ -182,6 +206,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleNonIterm(_ sender: NSMenuItem) {
         AppSettings.showNonIterm.toggle()
         sender.state = AppSettings.showNonIterm ? .on : .off
+    }
+
+    @objc private func toggleColorPanes(_ sender: NSMenuItem) {
+        AppSettings.colorPanes.toggle()
+        sender.state = AppSettings.colorPanes ? .on : .off
+    }
+
+    @objc private func toggleTabStrip(_ sender: NSMenuItem) {
+        AppSettings.showTabStrip.toggle()
+        sender.state = AppSettings.showTabStrip ? .on : .off
+    }
+
+    @objc private func togglePlaySound(_ sender: NSMenuItem) {
+        AppSettings.playSound.toggle()
+        sender.state = AppSettings.playSound ? .on : .off
     }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {

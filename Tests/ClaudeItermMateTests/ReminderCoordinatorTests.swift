@@ -34,7 +34,7 @@ final class ReminderCoordinatorTests: XCTestCase {
         NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
             "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
             "summary": "done", "full_message": "done", "timestamp": 1.0,
-            "repo_root": repoRoot,
+            "repo_root": repoRoot, "type": "stop",
         ]))!
     }
 
@@ -199,6 +199,61 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertEqual(toast.hideIntoTab, [true], "became a tab → shrink into the strip")
     }
 
+    private func waitingPayload(session: String = "S1", repoRoot: String = "/tmp/proj",
+                               full: String = "waiting") -> NotifyPayload {
+        NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
+            "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
+            "summary": "waiting", "full_message": full, "timestamp": 1.0,
+            "repo_root": repoRoot, "status": "waiting",
+        ]))!
+    }
+
+    func testWaitingFirstToastsAndMarksStatus() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        coordinator.handle(waitingPayload())
+        try await settle()
+        XCTAssertEqual(toast.shown, ["S1"])
+        XCTAssertEqual(coordinator.store.items.first?.status, .waiting)
+    }
+
+    // AC6: a permission storm (repeated waiting for one session) must refresh the
+    // existing tab, not spawn a second toast.
+    func testWaitingDoesNotRetoastWhileQueued() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.4)
+        coordinator.handle(waitingPayload(full: "perm Bash"))
+        try await settle()
+        try await Task.sleep(for: .milliseconds(1200)) // let it queue
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
+        XCTAssertEqual(toast.shown, ["S1"])
+
+        coordinator.handle(waitingPayload(full: "perm Write"))
+        try await settle()
+        XCTAssertEqual(toast.shown, ["S1"], "a follow-up waiting must not re-toast")
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["S1"])
+        XCTAssertEqual(coordinator.store.queued.first?.status, .waiting)
+        XCTAssertEqual(coordinator.store.queued.first?.fullMessage, "perm Write",
+                       "the existing tab's content is refreshed in place")
+    }
+
+    // AC5 (coordinator half): a real completion after a waiting tab re-toasts and
+    // flips the tab to completed (amber clears).
+    func testCompletedAfterWaitingRetoastsAndFlipsStatus() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.4)
+        coordinator.handle(waitingPayload())
+        try await settle()
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(coordinator.store.queued.first?.status, .waiting)
+
+        coordinator.handle(payload()) // no status → completed
+        try await settle()
+        XCTAssertEqual(toast.shown, ["S1", "S1"], "a genuine completion re-toasts")
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(coordinator.store.queued.first?.status, .completed, "flipped to completed")
+    }
+
     private func sessionStartPayload(session: String = "S1", repoRoot: String = "/tmp/proj") -> NotifyPayload {
         NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
             "type": "session_start", "source": "startup",
@@ -229,8 +284,147 @@ final class ReminderCoordinatorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: path) }
         let usage = UsageService(hudCachePath: path, fetch: { _ in nil })
         let coordinator = ReminderCoordinator(store: ReminderStore(), toastPanel: nil, usage: usage)
-        coordinator.onSessionStart = { _, _ in }
+        coordinator.onSetPaneBackground = { _, _ in }
         coordinator.handle(sessionStartPayload())
         XCTAssertTrue(usage.hudCacheAvailable, "session_start must probe the hud cache")
+    }
+
+    // MARK: - AskUserQuestion
+
+    private func decode(_ dict: [String: Any]) -> NotifyPayload {
+        NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: dict))!
+    }
+
+    private func questionPayload(session: String = "S1") -> NotifyPayload {
+        decode([
+            "session_uuid": session, "cwd": "/tmp/proj", "title": "proj",
+            "summary": "Pick?", "full_message": "Pick?", "timestamp": 1.0,
+            "type": "question", "status": "waiting",
+            "questions": [[
+                "question": "Pick?", "header": "H", "multiSelect": false,
+                "options": [["label": "A", "description": ""], ["label": "B", "description": ""]],
+            ]],
+        ])
+    }
+
+    func testResolveRemovesTab() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.2)
+        coordinator.handle(questionPayload())
+        try await settle()
+        XCTAssertEqual(coordinator.store.items.count, 1)
+        XCTAssertEqual(coordinator.store.items.first?.kind, .question)
+
+        coordinator.handle(decode([
+            "session_uuid": "S1", "cwd": "/tmp/proj", "timestamp": 2.0, "type": "resolve",
+        ]))
+        XCTAssertTrue(coordinator.store.items.isEmpty, "resolve must remove the tab")
+    }
+
+    func testQuestionNotOverwrittenByGenericPermissionWaiting() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 0.2)
+        coordinator.handle(questionPayload())
+        try await settle()
+
+        // The generic permission_prompt Notification for the same session must
+        // not clobber the rich question tab.
+        coordinator.handle(decode([
+            "session_uuid": "S1", "cwd": "/tmp/proj", "title": "proj",
+            "summary": "Claude needs your permission",
+            "full_message": "Claude needs your permission",
+            "timestamp": 3.0, "status": "waiting",
+        ]))
+        try await settle()
+
+        let item = coordinator.store.items.first
+        XCTAssertEqual(item?.kind, .question)
+        XCTAssertEqual(item?.summary, "Pick?", "generic waiting must not overwrite the question")
+        XCTAssertEqual(item?.questions.count, 1)
+    }
+
+    // MARK: - /color injection on Stop
+
+    /// The color name expected for a repo, resolved via the same assigner the
+    /// coordinator uses (stable/idempotent).
+    private func expectedColorName(_ coordinator: ReminderCoordinator, repoRoot: String) -> String {
+        let identity = ReminderIdentity(repoRoot: repoRoot, branch: nil, cwd: repoRoot)
+        return ReminderPalette.colorName(at: coordinator.store.assigner.colorIndex(for: identity.key))
+    }
+
+    /// A genuine Stop (type "stop") whose reply ends in a question — still an
+    /// ordinary composer, so injection is safe and expected.
+    private func waitingStopPayload(session: String = "S1", repoRoot: String = "/tmp/proj") -> NotifyPayload {
+        NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: [
+            "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
+            "summary": "?", "full_message": "Which one?", "timestamp": 1.0,
+            "repo_root": repoRoot, "type": "stop", "status": "waiting",
+        ]))!
+    }
+
+    // A completed, focusable Stop injects /color once; a second Stop for the
+    // same session does not re-inject (boolean per-session dedup).
+    func testCompletedStopInjectsColorOncePerSession() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [(String, String)] = []
+        coordinator.onInjectColor = { injected.append(($0, $1)) }
+        coordinator.handle(payload())
+        XCTAssertEqual(injected.map(\.0), ["S1"])
+        XCTAssertEqual(injected.first?.1, expectedColorName(coordinator, repoRoot: "/tmp/proj"))
+        coordinator.handle(payload())
+        XCTAssertEqual(injected.count, 1, "same session must not re-inject")
+    }
+
+    // A genuine Stop whose reply ends in a question is still injected — the
+    // composer is ordinary; only the TUI-bearing events below are excluded.
+    func testWaitingGenuineStopInjectsColor() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.handle(waitingStopPayload())
+        XCTAssertEqual(injected, ["S1"], "a question-ending Stop still injects /color")
+    }
+
+    // A permission-prompt Notification (type-less, waiting) is NOT a Stop and
+    // must not inject — its live TUI would be corrupted by the keys.
+    func testPermissionNotificationDoesNotInjectColor() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.handle(waitingPayload())
+        XCTAssertTrue(injected.isEmpty, "a permission notification must not inject /color")
+    }
+
+    // An AskUserQuestion event (type "question") must not inject — same TUI risk.
+    func testQuestionEventDoesNotInjectColor() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.handle(questionPayload())
+        XCTAssertTrue(injected.isEmpty, "an AskUserQuestion must not inject /color")
+    }
+
+    // SessionStart must not inject (injection is Stop-only).
+    func testSessionStartDoesNotInjectColor() {
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastPanel: nil)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.onSetPaneBackground = { _, _ in }
+        coordinator.handle(sessionStartPayload())
+        XCTAssertTrue(injected.isEmpty, "session_start must not inject /color")
+    }
+
+    // AC7: with coloring disabled, no injection and the session stays unmarked, so
+    // enabling later injects on the next completed Stop.
+    func testDisabledGateSkipsInjectionAndDoesNotMark() {
+        let coordinator = coordinator(SpyToast(), duration: 10)
+        var injected: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.isPaneColoringEnabled = { false }
+        coordinator.handle(payload())
+        XCTAssertTrue(injected.isEmpty, "disabled gate must skip injection")
+        coordinator.isPaneColoringEnabled = { true }
+        coordinator.handle(payload())
+        XCTAssertEqual(injected, ["S1"], "session was not marked while disabled → injects once enabled")
     }
 }

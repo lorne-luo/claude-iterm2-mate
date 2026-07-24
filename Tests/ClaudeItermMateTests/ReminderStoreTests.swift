@@ -5,7 +5,7 @@ final class ReminderStoreTests: XCTestCase {
     private func payload(
         session: String = "S1", summary: String = "hi",
         repoRoot: String = "/tmp/proj", branch: String? = nil,
-        timestamp: Double = 1.0
+        timestamp: Double = 1.0, status: String? = nil
     ) -> NotifyPayload {
         var obj: [String: Any] = [
             "session_uuid": session, "cwd": repoRoot, "title": "[CC] proj",
@@ -13,7 +13,43 @@ final class ReminderStoreTests: XCTestCase {
             "repo_root": repoRoot,
         ]
         if let branch { obj["branch"] = branch }
+        if let status { obj["status"] = status }
         return NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: obj))!
+    }
+
+    func testUpsertCarriesStatus() {
+        let store = ReminderStore()
+        _ = store.upsert(payload())
+        XCTAssertEqual(store.items[0].status, .completed, "no status field → completed")
+        _ = store.upsert(payload(status: "waiting"))
+        XCTAssertEqual(store.items[0].status, .waiting)
+    }
+
+    func testLaterCompletedPayloadReplacesWaitingStatus() {
+        let store = ReminderStore()
+        _ = store.upsert(payload(status: "waiting"))
+        _ = store.upsert(payload(summary: "done")) // completed
+        XCTAssertEqual(store.items.count, 1)
+        XCTAssertEqual(store.items[0].status, .completed)
+    }
+
+    func testRefreshContentUpdatesFieldsButNotPhaseOrStatus() {
+        let store = ReminderStore()
+        let token = store.upsert(payload(summary: "old", status: "waiting"))
+        store.queueIfCurrent(sessionUUID: "S1", token: token)
+        store.refreshContent(sessionUUID: "S1", summary: "new", fullMessage: "new body", timestamp: 9.0, kind: .plain, questions: [])
+        XCTAssertEqual(store.items[0].summary, "new")
+        XCTAssertEqual(store.items[0].fullMessage, "new body")
+        XCTAssertEqual(store.items[0].timestamp, 9.0)
+        XCTAssertEqual(store.items[0].phase, .queued, "refresh must not re-enter the toast cycle")
+        XCTAssertEqual(store.items[0].status, .waiting, "refresh must not change status")
+    }
+
+    func testRefreshContentIgnoresUnknownSession() {
+        let store = ReminderStore()
+        _ = store.upsert(payload(session: "S1"))
+        store.refreshContent(sessionUUID: "NOPE", summary: "x", fullMessage: "x", timestamp: 2.0, kind: .plain, questions: [])
+        XCTAssertEqual(store.items[0].summary, "hi", "unknown session is a no-op")
     }
 
     func testUpsertInsertsAsToasting() {

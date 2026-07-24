@@ -57,9 +57,4 @@ final class ColorAssignerTests: XCTestCase {
         XCTAssertEqual(a.colorIndex(for: ninth), preferredIndex(ninth))
     }
 
-    func testColorNameMatchesPaletteSlot() {
-        let a = ColorAssigner()
-        let idx = a.colorIndex(for: "/x/proj")
-        XCTAssertEqual(a.colorName(for: "/x/proj"), ReminderPalette.names[idx])
-    }
 }

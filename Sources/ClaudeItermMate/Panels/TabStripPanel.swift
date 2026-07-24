@@ -96,6 +96,12 @@ struct TabStripView: View {
 private struct EdgeTabView: View {
     let item: ReminderItem
     @State private var hovering = false
+    /// Drives the bright-white breathing pulse on a waiting tab. Toggled true on
+    /// appear / on a flip to waiting via `withAnimation(.repeatForever)`; ignored
+    /// (and the overlay/glow removed) while completed.
+    @State private var breathe = false
+
+    private var isWaiting: Bool { item.status == .waiting }
 
     private var shape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -120,9 +126,39 @@ private struct EdgeTabView: View {
             }
             .clipShape(shape)
             .overlay(shape.strokeBorder(.white.opacity(hovering ? 0.5 : 0.12), lineWidth: 1))
+            // Waiting: a bright-white breathing border over the project color
+            // (project color and glyph stay untouched — status is an additional
+            // signal). Opacity + glow pulse together on the `breathe` flag.
+            .overlay {
+                if isWaiting {
+                    shape.strokeBorder(
+                        ReminderPalette.waitingAccent.opacity(breathe ? 1 : 0.5),
+                        lineWidth: 2
+                    )
+                }
+            }
+            .shadow(
+                color: isWaiting ? ReminderPalette.waitingAccent.opacity(breathe ? 0.9 : 0.3) : .clear,
+                radius: isWaiting ? (breathe ? 9 : 3) : 0
+            )
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .animation(.easeInOut(duration: 0.15), value: hovering)
+            .onAppear { syncBreathing() }
+            .onChange(of: item.status) { syncBreathing() }
+    }
+
+    /// Start the repeating pulse when waiting; stop it otherwise. Called on appear
+    /// and whenever status flips, so a completed->waiting change while the tab is
+    /// already on screen still animates.
+    private func syncBreathing() {
+        if isWaiting {
+            withAnimation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true)) {
+                breathe = true
+            }
+        } else {
+            breathe = false
+        }
     }
 
     /// The main working tree shows a "home" icon; named worktrees show the

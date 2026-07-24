@@ -109,15 +109,19 @@ struct ToastView: View {
     var showsMinimize: Bool = false
     var onMinimize: () -> Void = {}
     var onClose: () -> Void = {}
+    /// Drives the waiting toast's bright-white breathing glow (matches the tab).
+    @State private var breathe = false
+
+    private var isWaiting: Bool { item.status == .waiting }
 
     /// Character budget for the toast title at 360pt / 13pt semibold.
     static let titleBudget = 42
 
-    /// `[CC] project · branch` when it fits within `titleBudget`; otherwise the
+    /// `project · branch` when it fits within `titleBudget`; otherwise the
     /// branch is truncated (with an ellipsis), and dropped entirely if even the
     /// project alone leaves no room.
     static func title(project: String, branch: String?) -> String {
-        let base = "[CC] \(project)"
+        let base = project
         guard let branch, !branch.isEmpty else { return base }
         let full = "\(base) · \(branch)"
         if full.count <= titleBudget { return full }
@@ -189,7 +193,23 @@ struct ToastView: View {
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(0.12), lineWidth: 1))
+        // Waiting: a bright-white breathing border + glow so the toast and the
+        // tab it becomes read as one.
+        .overlay {
+            if isWaiting {
+                RoundedRectangle(cornerRadius: 13)
+                    .strokeBorder(ReminderPalette.waitingAccent.opacity(breathe ? 1 : 0.5), lineWidth: 2)
+                    .shadow(color: ReminderPalette.waitingAccent.opacity(breathe ? 0.8 : 0.25),
+                            radius: breathe ? 9 : 3)
+            }
+        }
         .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
+        .onAppear {
+            guard isWaiting else { return }
+            withAnimation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true)) {
+                breathe = true
+            }
+        }
         .padding(8) // inset within the panel so the shadow is not clipped
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)

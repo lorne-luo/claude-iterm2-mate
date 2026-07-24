@@ -16,6 +16,13 @@ final class DetailPanel {
     /// Invoked when the popup's close button is clicked — remove the tab.
     var onClose: ((ReminderItem) -> Void)?
 
+    /// Invoked when the user answers an AskUserQuestion from the popup: the
+    /// chosen answer + the question's option count (to build the tty sequence).
+    var onAnswer: ((ReminderItem, ItermSendTextAction.Answer, Int) -> Void)?
+
+    /// Invoked for "Chat about this": jump to + maximize the owning pane.
+    var onChat: ((ReminderItem) -> Void)?
+
     static let showDelay: TimeInterval = 0.5
     static let hideGrace: TimeInterval = 0.2
     static let width: CGFloat = 520
@@ -41,7 +48,10 @@ final class DetailPanel {
         let height = Self.fittingHeight(item: item, usage: usage, width: Self.width, maxHeight: maxHeight)
         let size = CGSize(width: Self.width, height: height)
         let frame = EdgeGeometry.detailFrame(anchoring: tabFrame, size: size, visible: visible)
-        let panel = self.panel ?? PanelFactory.makePanel(frame: frame, canBecomeKey: true)
+        // A question popup hosts a text field; it must become key (and main) to
+        // receive keyboard focus. Plain popups stay non-key (never steal focus).
+        let editable = item.kind == .question
+        let panel = self.panel ?? PanelFactory.makePanel(frame: frame, canBecomeKey: true, editable: editable)
         self.panel = panel
         panel.contentViewController = NSHostingController(rootView: DetailView(
             item: item,
@@ -51,16 +61,29 @@ final class DetailPanel {
                 if inside { self?.hideWork?.cancel() } else { self?.scheduleHide() }
             },
             onClose: { [weak self] in
-                guard let self else { return }
-                self.showWork?.cancel()
-                self.hideWork?.cancel()
-                self.mouseInsideDetail = false
-                self.panel?.orderOut(nil)
-                self.onClose?(item)
+                self?.dismiss()
+                self?.onClose?(item)
+            },
+            onAnswer: { [weak self] answer, optionCount in
+                self?.dismiss()
+                self?.onAnswer?(item, answer, optionCount)
+            },
+            onChat: { [weak self] in
+                self?.dismiss()
+                self?.onChat?(item)
             }
         ))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
+        if editable { panel.makeKey() }
+    }
+
+    /// Tear down the popup and cancel any pending show/hide work.
+    private func dismiss() {
+        showWork?.cancel()
+        hideWork?.cancel()
+        mouseInsideDetail = false
+        panel?.orderOut(nil)
     }
 
     /// Measure the card's natural height at the given width using a
@@ -95,6 +118,16 @@ struct DetailView: View {
     var scrolls: Bool = true
     var onHoverChanged: (Bool) -> Void = { _ in }
     var onClose: () -> Void = {}
+    var onAnswer: (ItermSendTextAction.Answer, Int) -> Void = { _, _ in }
+    var onChat: () -> Void = {}
+
+    /// Interactive answer controls render only for a single-question
+    /// AskUserQuestion; multi-question prompts fall back to the text body plus a
+    /// jump (the tty injection sequence is only verified for one question).
+    private var interactiveQuestion: NotifyPayload.Question? {
+        guard item.kind == .question, item.questions.count == 1 else { return nil }
+        return item.questions.first
+    }
 
     /// Live `5h N% · 7d N%` from the current in-memory snapshot, or nil when
     /// there is no data yet (the header then omits the badge). `@MainActor`
@@ -181,15 +214,24 @@ struct DetailView: View {
     }
 
     @ViewBuilder private var messageBody: some View {
-        let text = Text(item.fullMessage)
-            .font(.system(size: 12))
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-        if scrolls {
-            ScrollView { text }
+        if let question = interactiveQuestion {
+            let controls = QuestionAnswerView(question: question, onAnswer: onAnswer, onChat: onChat)
+            if scrolls {
+                ScrollView { controls }
+            } else {
+                controls
+            }
         } else {
-            text
+            let text = Text(item.fullMessage)
+                .font(.system(size: 12))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            if scrolls {
+                ScrollView { text }
+            } else {
+                text
+            }
         }
     }
 }

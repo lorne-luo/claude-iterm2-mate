@@ -2,7 +2,7 @@ import XCTest
 @testable import ClaudeItermMate
 
 /// The session_start message path: payload decoding, coordinator routing to
-/// the color injector, and SessionStart hook settings transforms.
+/// the pane colorer, and SessionStart hook settings transforms.
 final class SessionStartTests: XCTestCase {
     private func payload(_ json: [String: Any]) -> NotifyPayload? {
         NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: json))
@@ -43,17 +43,19 @@ final class SessionStartTests: XCTestCase {
     // MARK: coordinator routing
 
     @MainActor
-    func testSessionStartInjectsAssignedColorAndCreatesNoItem() {
+    func testSessionStartSetsPaneBackgroundAndCreatesNoItem() {
         let store = ReminderStore()
         let coordinator = ReminderCoordinator(store: store, toastPanel: nil)
-        var injected: [(session: String, name: String)] = []
-        coordinator.onSessionStart = { injected.append(($0, $1)) }
+        var applied: [(session: String, hex: String)] = []
+        coordinator.onSetPaneBackground = { applied.append(($0, $1)) }
 
         coordinator.handle(payload(sessionStartJSON)!)
 
-        XCTAssertEqual(injected.count, 1)
-        XCTAssertEqual(injected[0].session, "S1")
-        XCTAssertEqual(injected[0].name, store.assigner.colorName(for: "/x/proj"))
+        XCTAssertEqual(applied.count, 1)
+        XCTAssertEqual(applied[0].session, "S1")
+        // branch "main", not a worktree → shade 0.
+        let idx = store.assigner.colorIndex(for: "/x/proj")
+        XCTAssertEqual(applied[0].hex, ReminderPalette.backgroundHex(at: idx, shade: 0))
         XCTAssertTrue(store.items.isEmpty, "session_start must not create a reminder")
     }
 
@@ -61,8 +63,8 @@ final class SessionStartTests: XCTestCase {
     func testSessionStartColorMatchesLaterStopTabColor() {
         let store = ReminderStore()
         let coordinator = ReminderCoordinator(store: store, toastPanel: nil)
-        var injectedName: String?
-        coordinator.onSessionStart = { injectedName = $1 }
+        var appliedHex: String?
+        coordinator.onSetPaneBackground = { appliedHex = $1 }
 
         coordinator.handle(payload(sessionStartJSON)!)
 
@@ -70,15 +72,16 @@ final class SessionStartTests: XCTestCase {
         stopJSON.removeValue(forKey: "type")
         store.upsert(payload(stopJSON)!)
 
+        // The pane background is the dark variant of the same slot the tab uses.
         let item = store.items[0]
-        XCTAssertEqual(ReminderPalette.colorName(at: item.colorIndex), injectedName)
+        XCTAssertEqual(ReminderPalette.backgroundHex(at: item.colorIndex, shade: 0), appliedHex)
     }
 
     @MainActor
     func testSessionStartDoesNotSetLightenLevel() {
         let store = ReminderStore()
         let coordinator = ReminderCoordinator(store: store, toastPanel: nil)
-        coordinator.onSessionStart = { _, _ in }
+        coordinator.onSetPaneBackground = { _, _ in }
 
         // session_start injects a color but registers no tab, so a lone stop-path
         // session in the same directory renders at the base level (0). The color
