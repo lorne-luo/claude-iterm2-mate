@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel(usage: usage), usage: usage)
+        Self.configureReminderSettings(on: coordinator)
         coordinator.onActivate = { [weak self] item in self?.activate(item) }
         coordinator.isNonItermEnabled = { AppSettings.showNonIterm }
         coordinator.onNotify = { [weak self] title, subtitle, body in
@@ -90,6 +91,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 catch { NSLog("Hook refresh on launch failed: \(error)") }
             }
         }
+    }
+
+    static func configureReminderSettings(
+        on coordinator: ReminderCoordinator,
+        playSound: @escaping () -> Void = { NSSound.beep() }
+    ) {
+        coordinator.isTabStripEnabled = { AppSettings.showTabStrip }
+        coordinator.isSoundEnabled = { AppSettings.playSound }
+        coordinator.onPlaySound = playSound
     }
 
     /// Jump to the pane owning a reminder and consume it. Shared by tab clicks
