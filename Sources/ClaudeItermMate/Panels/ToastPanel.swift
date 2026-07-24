@@ -5,7 +5,9 @@ import SwiftUI
 protocol ToastPanelProtocol: AnyObject {
     func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
-              onMinimize: @escaping () -> Void, onClose: @escaping () -> Void)
+              onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
+              onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
+              onChat: @escaping () -> Void)
     /// Dismiss the toast. `intoTab` true → shrink toward the tab strip (it is
     /// becoming a tab); false → fade out in place (it is being dropped, so a
     /// fly-into-the-strip animation would be misleading — nothing lands there).
@@ -29,11 +31,17 @@ final class ToastPanel: ToastPanelProtocol {
 
     func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
-              onMinimize: @escaping () -> Void, onClose: @escaping () -> Void) {
+              onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
+              onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
+              onChat: @escaping () -> Void) {
         hide(intoTab: false)
         let height = Self.fittingHeight(item: item)
         let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
-        // canBecomeKey so the SwiftUI tap gesture receives the click.
+        // canBecomeKey so the SwiftUI tap gesture receives the click. The panel
+        // is NOT made key here — a passively-shown toast must not steal the
+        // terminal's keyboard focus. It only becomes key when the user clicks the
+        // free-text field (onEditingBegan below), so an interactive question can
+        // be typed into without the toast hijacking focus on appearance.
         let panel = PanelFactory.makePanel(frame: frame, canBecomeKey: true)
         panel.contentView = FirstMouseHostingView(rootView: ToastView(
             item: item,
@@ -45,7 +53,10 @@ final class ToastPanel: ToastPanelProtocol {
             onHover: onHover,
             showsMinimize: showsMinimize,
             onMinimize: onMinimize,
-            onClose: onClose
+            onClose: onClose,
+            onAnswer: onAnswer,
+            onChat: onChat,
+            onEditingBegan: { [weak panel] in panel?.makeKey() }
         ))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
@@ -109,8 +120,15 @@ struct ToastView: View {
     var showsMinimize: Bool = false
     var onMinimize: () -> Void = {}
     var onClose: () -> Void = {}
+    var onAnswer: (ItermSendTextAction.Answer, Int) -> Void = { _, _ in }
+    var onChat: () -> Void = {}
+    var onEditingBegan: () -> Void = {}
     /// Drives the waiting toast's bright-white breathing glow (matches the tab).
     @State private var breathe = false
+
+    /// Interactive answer controls render only for a single-question
+    /// AskUserQuestion (shared rule with DetailView); otherwise plain text.
+    private var interactiveQuestion: NotifyPayload.Question? { item.interactiveQuestion }
 
     private var isWaiting: Bool { item.status == .waiting }
 
@@ -173,12 +191,22 @@ struct ToastView: View {
                             .fixedSize()
                     }
                 }
-                Text(item.fullMessage)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.primary)
-                    .lineLimit(10)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let question = interactiveQuestion {
+                    QuestionAnswerView(
+                        question: question,
+                        onAnswer: onAnswer,
+                        onChat: onChat,
+                        onEditingBegan: onEditingBegan
+                    )
+                    .padding(.horizontal, -4) // QuestionAnswerView pads 16; trim inside the toast
+                } else {
+                    Text(item.fullMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.primary)
+                        .lineLimit(10)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             // Top-right controls; laid out (not overlaid) so the text reserves
             // room for them and never runs underneath.
@@ -212,7 +240,19 @@ struct ToastView: View {
         }
         .padding(8) // inset within the panel so the shadow is not clipped
         .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
+        // Whole-card tap-to-jump only for non-question toasts. A question card
+        // hosts controls; a background tap must not jump — "Chat about this"
+        // provides the jump instead.
+        .tapToJump(interactiveQuestion == nil, action: onTap)
         .onHover(perform: onHover)
+    }
+}
+
+private extension View {
+    /// Attach the whole-card tap gesture only when `enabled`; otherwise leave the
+    /// view untouched so embedded controls own every tap.
+    @ViewBuilder
+    func tapToJump(_ enabled: Bool, action: @escaping () -> Void) -> some View {
+        if enabled { onTapGesture(perform: action) } else { self }
     }
 }

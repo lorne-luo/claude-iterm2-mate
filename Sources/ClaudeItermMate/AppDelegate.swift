@@ -55,18 +55,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Answer an AskUserQuestion by injecting keystrokes into the owning pane
         // (off-main). Optimistically remove the tab; the PostToolUse `resolve`
         // hook also clears it once the answer lands.
+        // One implementation shared by the detail popup and the toast, so
+        // answering/chatting behaves identically from either surface.
         let sendTextAction = self.sendTextAction
-        detail.onAnswer = { [weak self] item, answer, optionCount in
+        let answerHandler: (ReminderItem, ItermSendTextAction.Answer, Int) -> Void = { [weak self] item, answer, optionCount in
             DispatchQueue.global(qos: .userInitiated).async {
                 sendTextAction.answer(sessionUUID: item.sessionUUID, answer: answer, optionCount: optionCount)
             }
             self?.store.remove(sessionUUID: item.sessionUUID)
         }
         // "Chat about this": jump to and maximize the pane, then drop the tab.
-        detail.onChat = { [weak self] item in
+        let chatHandler: (ReminderItem) -> Void = { [weak self] item in
             self?.focusAction.focus(sessionUUID: item.sessionUUID, maximize: true)
             self?.store.remove(sessionUUID: item.sessionUUID)
         }
+        detail.onAnswer = answerHandler
+        detail.onChat = chatHandler
+        coordinator.onAnswer = answerHandler
+        coordinator.onChat = chatHandler
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
         }
