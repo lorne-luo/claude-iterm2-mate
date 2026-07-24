@@ -129,6 +129,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         colorPanes.isEnabled = installed
         colorPanes.image = symbol("paintpalette")
         menu.addItem(colorPanes)
+        let tabStrip = NSMenuItem(
+            title: "Show Tab Strip", action: #selector(toggleTabStrip(_:)), keyEquivalent: ""
+        )
+        tabStrip.target = self
+        tabStrip.state = AppSettings.showTabStrip ? .on : .off
+        tabStrip.isEnabled = installed
+        tabStrip.image = symbol("sidebar.right")
+        menu.addItem(tabStrip)
+        let playSound = NSMenuItem(
+            title: "Play Sound", action: #selector(togglePlaySound(_:)), keyEquivalent: ""
+        )
+        playSound.target = self
+        playSound.state = AppSettings.playSound ? .on : .off
+        playSound.isEnabled = installed
+        playSound.image = symbol("speaker.wave.2")
+        menu.addItem(playSound)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.image = symbol("xmark.circle")
@@ -195,6 +211,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleColorPanes(_ sender: NSMenuItem) {
         AppSettings.colorPanes.toggle()
         sender.state = AppSettings.colorPanes ? .on : .off
+    }
+
+    @objc private func toggleTabStrip(_ sender: NSMenuItem) {
+        AppSettings.showTabStrip.toggle()
+        sender.state = AppSettings.showTabStrip ? .on : .off
+    }
+
+    @objc private func togglePlaySound(_ sender: NSMenuItem) {
+        AppSettings.playSound.toggle()
+        sender.state = AppSettings.playSound ? .on : .off
     }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {

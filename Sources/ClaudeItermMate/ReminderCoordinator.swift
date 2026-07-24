@@ -46,6 +46,20 @@ final class ReminderCoordinator {
     /// session when `isNonItermEnabled` is on. Injected by AppDelegate.
     var onNotify: ((_ title: String, _ subtitle: String, _ body: String) -> Void)?
 
+    /// Whether a reminder demotes into a persistent right-edge tab after its
+    /// toast expires. Off → the toast still flies in but is dropped on expiry
+    /// (no tab). Defaults to on; AppDelegate wires it to `AppSettings.showTabStrip`.
+    var isTabStripEnabled: () -> Bool = { true }
+
+    /// Whether a system sound plays when a new toast is presented. Defaults to
+    /// on; AppDelegate wires it to `AppSettings.playSound`.
+    var isSoundEnabled: () -> Bool = { true }
+
+    /// Play the reminder sound. Injected by AppDelegate; tests observe it.
+    /// Called once per genuinely-presented toast (after the permission-storm and
+    /// question-clobber dedup guards), so it fires for both completed and waiting.
+    var onPlaySound: (() -> Void)?
+
     /// Token of the toast currently shown in the single shared panel. Only the
     /// timer that owns the visible toast may hide it, so an older session's
     /// timer can never dismiss a newer session's toast early.
@@ -202,6 +216,10 @@ final class ReminderCoordinator {
             )
             return
         }
+        // A genuinely new toast is about to fly in (past both dedup guards):
+        // play the reminder sound once. Covers completed and waiting alike; a
+        // refreshed-in-place waiting event returned above, so no storm re-plays.
+        if isSoundEnabled() { onPlaySound?() }
         let token = store.upsert(p)
         let timer = ToastTimer(duration: toastDuration) { [weak self] in
             self?.complete(token: token, session: session, findable: findable)
@@ -251,10 +269,14 @@ final class ReminderCoordinator {
     private func complete(token: UUID, session: String, findable: Bool) {
         timers[token]?.cancel()
         timers[token] = nil
-        if findable {
+        // Demote into a tab only when findable AND the tab strip is enabled.
+        // With the strip off the toast still ran its course; it just leaves no
+        // persistent tab. An unfindable session never has a pane to jump to.
+        let becomesTab = findable && isTabStripEnabled()
+        if becomesTab {
             store.queueIfCurrent(sessionUUID: session, token: token)
         } else {
-            // No jumpable pane: drop it instead of leaving a dead tab.
+            // No jumpable pane (or strip disabled): drop it, don't leave a dead tab.
             store.removeIfCurrent(sessionUUID: session, token: token)
         }
         // Hide only if this timer's toast is still the one on screen; a newer
@@ -262,7 +284,7 @@ final class ReminderCoordinator {
         // into the strip only when it actually became a tab (findable); a
         // dropped toast just fades so the animation never lies about a tab.
         if displayed?.token == token {
-            toastPanel?.hide(intoTab: findable)
+            toastPanel?.hide(intoTab: becomesTab)
             displayed = nil
         }
     }

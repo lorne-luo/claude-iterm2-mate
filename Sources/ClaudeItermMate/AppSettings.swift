@@ -20,4 +20,22 @@ enum AppSettings {
         get { UserDefaults.standard.object(forKey: colorPanesKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: colorPanesKey) }
     }
+
+    private static let showTabStripKey = "showTabStrip"
+
+    /// Whether reminders demote into a right-edge tab after their toast expires.
+    /// Default true. Off → toasts still fly in, but expire without leaving a
+    /// persistent tab (the strip stays empty).
+    static var showTabStrip: Bool {
+        get { UserDefaults.standard.object(forKey: showTabStripKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: showTabStripKey) }
+    }
+
+    private static let playSoundKey = "playSound"
+
+    /// Whether a system sound plays when a reminder toast appears. Default true.
+    static var playSound: Bool {
+        get { UserDefaults.standard.object(forKey: playSoundKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: playSoundKey) }
+    }
 }
