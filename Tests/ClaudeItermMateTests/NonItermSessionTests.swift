@@ -13,7 +13,9 @@ final class NonItermSessionTests: XCTestCase {
         var lastOnClick: (() -> Void)?
         func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
                   onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
-                  onMinimize: @escaping () -> Void, onClose: @escaping () -> Void) {
+                  onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
+                  onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
+                  onChat: @escaping () -> Void) {
             shown.append(item.sessionUUID)
             lastOnClick = onClick
         }

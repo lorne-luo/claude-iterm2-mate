@@ -123,11 +123,8 @@ struct DetailView: View {
 
     /// Interactive answer controls render only for a single-question
     /// AskUserQuestion; multi-question prompts fall back to the text body plus a
-    /// jump (the tty injection sequence is only verified for one question).
-    private var interactiveQuestion: NotifyPayload.Question? {
-        guard item.kind == .question, item.questions.count == 1 else { return nil }
-        return item.questions.first
-    }
+    /// jump. Shared with ToastView via `ReminderItem.interactiveQuestion`.
+    private var interactiveQuestion: NotifyPayload.Question? { item.interactiveQuestion }
 
     /// Live `5h N% · 7d N%` from the current in-memory snapshot, or nil when
     /// there is no data yet (the header then omits the badge). `@MainActor`

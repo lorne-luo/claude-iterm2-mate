@@ -19,6 +19,16 @@ final class ReminderCoordinator {
     /// reminder (same as clicking its tab). Injected by AppDelegate.
     var onActivate: ((ReminderItem) -> Void)?
 
+    /// Invoked when the user answers an AskUserQuestion directly from the toast:
+    /// the chosen answer + the question's option count (to build the tty
+    /// sequence). Same contract as `DetailPanel.onAnswer`; AppDelegate wires both
+    /// to one implementation.
+    var onAnswer: ((ReminderItem, ItermSendTextAction.Answer, Int) -> Void)?
+
+    /// Invoked for "Chat about this" from the toast: jump to + maximize the pane.
+    /// Same contract as `DetailPanel.onChat`.
+    var onChat: ((ReminderItem) -> Void)?
+
     /// Invoked to color a session's iTerm2 pane background (`RRGGBB` hex).
     /// AppDelegate wires this to `ItermBgColorAction` (off-main, fire-and-forget);
     /// tests observe it. Gating/dedup happen in `colorPaneIfNeeded` before this
@@ -284,6 +294,16 @@ final class ReminderCoordinator {
                     // Close dismisses without a tab — drop the item outright,
                     // regardless of findability.
                     self?.complete(token: token, session: session, findable: false)
+                },
+                onAnswer: { [weak self] answer, count in
+                    // Answered from the toast: tear down (cancel timer + fade +
+                    // drop the item) then run the injected side effect.
+                    self?.complete(token: token, session: session, findable: false)
+                    self?.onAnswer?(item, answer, count)
+                },
+                onChat: { [weak self] in
+                    self?.complete(token: token, session: session, findable: false)
+                    self?.onChat?(item)
                 }
             )
             displayed = Displayed(token: token, session: session, findable: findable)

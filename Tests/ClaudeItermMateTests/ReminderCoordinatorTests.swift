@@ -11,16 +11,22 @@ final class ReminderCoordinatorTests: XCTestCase {
         var lastOnHover: ((Bool) -> Void)?
         var lastOnMinimize: (() -> Void)?
         var lastOnClose: (() -> Void)?
+        var lastOnAnswer: ((ItermSendTextAction.Answer, Int) -> Void)?
+        var lastOnChat: (() -> Void)?
         var lastShowsMinimize: Bool?
         func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
                   onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
-                  onMinimize: @escaping () -> Void, onClose: @escaping () -> Void) {
+                  onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
+                  onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
+                  onChat: @escaping () -> Void) {
             shown.append(item.sessionUUID)
             lastShowsMinimize = showsMinimize
             lastOnClick = onClick
             lastOnHover = onHover
             lastOnMinimize = onMinimize
             lastOnClose = onClose
+            lastOnAnswer = onAnswer
+            lastOnChat = onChat
         }
         func hide(intoTab: Bool) { hidden += 1; hideIntoTab.append(intoTab) }
     }
@@ -510,5 +516,62 @@ final class ReminderCoordinatorTests: XCTestCase {
                        "A's inject-once flag was GC'd, so it injects again")
         XCTAssertEqual(colored.filter { $0 == "A" }.count, 2,
                        "A's color hex was GC'd, so it colors again")
+    }
+
+    // MARK: - Toast question answering
+
+    private func multiQuestionPayload(session: String = "S1") -> NotifyPayload {
+        let q: [String: Any] = [
+            "question": "Pick?", "header": "H", "multiSelect": false,
+            "options": [["label": "A", "description": ""], ["label": "B", "description": ""]],
+        ]
+        return decode([
+            "session_uuid": session, "cwd": "/tmp/proj", "title": "proj",
+            "summary": "Pick?", "full_message": "Pick?", "timestamp": 1.0,
+            "type": "question", "status": "waiting", "questions": [q, q],
+        ])
+    }
+
+    // AC2: interactiveQuestion is present only for a single-question prompt.
+    func testInteractiveQuestionPredicate() {
+        let store = ReminderStore()
+        store.upsert(questionPayload(session: "Q1"))
+        XCTAssertNotNil(store.items.first { $0.sessionUUID == "Q1" }?.interactiveQuestion,
+                        "single-question prompt is interactive")
+        store.upsert(payload(session: "P1"))
+        XCTAssertNil(store.items.first { $0.sessionUUID == "P1" }?.interactiveQuestion,
+                     "plain reminder is not interactive")
+        store.upsert(multiQuestionPayload(session: "M1"))
+        XCTAssertNil(store.items.first { $0.sessionUUID == "M1" }?.interactiveQuestion,
+                     "multi-question prompt is not interactive")
+    }
+
+    // AC3: answering from the toast fires the coordinator's answer closure with
+    // the right session + option count, and removes the reminder.
+    func testToastAnswerInvokesCoordinatorAnswerAndRemoves() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        var answered: [(String, Int)] = []
+        coordinator.onAnswer = { item, _, count in answered.append((item.sessionUUID, count)) }
+        coordinator.handle(questionPayload(session: "S1"))
+        try await settle()
+        XCTAssertNotNil(toast.lastOnAnswer, "a question toast wires onAnswer")
+        toast.lastOnAnswer?(.option(1), 2)
+        XCTAssertEqual(answered.map(\.0), ["S1"])
+        XCTAssertEqual(answered.first?.1, 2)
+        XCTAssertTrue(coordinator.store.items.isEmpty, "answering removes the reminder")
+    }
+
+    // AC3: "Chat about this" from the toast fires onChat and removes the item.
+    func testToastChatInvokesCoordinatorChatAndRemoves() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        var chatted: [String] = []
+        coordinator.onChat = { item in chatted.append(item.sessionUUID) }
+        coordinator.handle(questionPayload(session: "S1"))
+        try await settle()
+        toast.lastOnChat?()
+        XCTAssertEqual(chatted, ["S1"])
+        XCTAssertTrue(coordinator.store.items.isEmpty)
     }
 }

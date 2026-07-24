@@ -94,8 +94,11 @@ mirroring how tabs separate them by a lighten step. All gating/dedup (`coloredSe
 **AskUserQuestion** (`--event ask` / `ask-done`): a PreToolUse hook (matcher
 `AskUserQuestion`) surfaces the question + options as a rich waiting tab
 (`ReminderItem.kind == .question`, carrying `NotifyPayload.questions`); the
-DetailPanel renders answer controls (`QuestionAnswerView`: option buttons, a
-free-text field, "Chat about this"). Answering injects keystrokes into the
+both the DetailPanel and the toast render answer controls (`QuestionAnswerView`:
+option buttons, a free-text field, "Chat about this") for a single-question
+prompt — the toast stays non-key until the free-text field is clicked
+(`onEditingBegan` → `panel.makeKey()`) so it never steals terminal focus on
+appearance. Answering injects keystrokes into the
 owning pane via `ItermSendTextAction` (`it2 session send -s <uuid>`); the exact
 TUI sequences (single digit selects+submits; free text = "Type something" row +
 text + `\r`; multiSelect = digit toggles + right-arrow + Submit) were verified
