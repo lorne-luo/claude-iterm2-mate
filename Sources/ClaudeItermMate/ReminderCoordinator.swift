@@ -29,6 +29,11 @@ final class ReminderCoordinator {
     /// Same contract as `DetailPanel.onChat`.
     var onChat: ((ReminderItem) -> Void)?
 
+    /// Invoked when the toast's title row is double-clicked: jump to the pane and
+    /// maximize it unconditionally (ignoring the maximize-on-click toggle), then
+    /// consume the reminder. Same contract as `DetailPanel.onJumpMaximized`.
+    var onJumpMaximized: ((ReminderItem) -> Void)?
+
     /// Invoked to color a session's iTerm2 pane background (`RRGGBB` hex).
     /// AppDelegate wires this to `ItermBgColorAction` (off-main, fire-and-forget);
     /// tests observe it. Gating/dedup happen in `colorPaneIfNeeded` before this
@@ -304,6 +309,12 @@ final class ReminderCoordinator {
                 onChat: { [weak self] in
                     self?.complete(token: token, session: session, findable: false)
                     self?.onChat?(item)
+                },
+                onJumpMaximized: { [weak self] in
+                    // Title double-click: tear the toast down (no tab — we are
+                    // jumping there) and hand off the maximized jump.
+                    self?.complete(token: token, session: session, findable: false)
+                    self?.onJumpMaximized?(item)
                 }
             )
             displayed = Displayed(token: token, session: session, findable: findable)

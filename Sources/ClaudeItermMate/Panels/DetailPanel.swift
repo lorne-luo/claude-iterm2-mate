@@ -23,6 +23,10 @@ final class DetailPanel {
     /// Invoked for "Chat about this": jump to + maximize the owning pane.
     var onChat: ((ReminderItem) -> Void)?
 
+    /// Invoked when the popup's header is double-clicked: jump to the owning pane
+    /// and maximize it unconditionally (ignoring the maximize-on-click toggle).
+    var onJumpMaximized: ((ReminderItem) -> Void)?
+
     static let showDelay: TimeInterval = 0.5
     static let hideGrace: TimeInterval = 0.2
     static let width: CGFloat = 520
@@ -71,6 +75,10 @@ final class DetailPanel {
             onChat: { [weak self] in
                 self?.dismiss()
                 self?.onChat?(item)
+            },
+            onJumpMaximized: { [weak self] in
+                self?.dismiss()
+                self?.onJumpMaximized?(item)
             }
         ))
         panel.setFrame(frame, display: true)
@@ -120,6 +128,9 @@ struct DetailView: View {
     var onClose: () -> Void = {}
     var onAnswer: (ItermSendTextAction.Answer, Int) -> Void = { _, _ in }
     var onChat: () -> Void = {}
+    /// Double-click on the header: always jump to the *maximized* pane, whatever
+    /// the maximize-on-click toggle says. Mirrors the toast's title row.
+    var onJumpMaximized: () -> Void = {}
 
     /// Interactive answer controls render only for a single-question
     /// AskUserQuestion; multi-question prompts fall back to the text body plus a
@@ -195,6 +206,8 @@ struct DetailView: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(accent.opacity(0.15))
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2, perform: onJumpMaximized)
 
             Divider()
 

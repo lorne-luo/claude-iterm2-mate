@@ -73,6 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         detail.onChat = chatHandler
         coordinator.onAnswer = answerHandler
         coordinator.onChat = chatHandler
+        // Double-clicking a title row (toast or hover popup) is the same jump:
+        // always maximized, whatever the maximize-on-click toggle says.
+        detail.onJumpMaximized = chatHandler
+        coordinator.onJumpMaximized = chatHandler
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
         }

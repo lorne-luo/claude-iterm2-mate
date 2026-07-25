@@ -20,5 +20,10 @@
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<!-- Needed to prompt for Automation access: the app asks iTerm2 (over
+	     AppleScript) which sessions are still alive, and posts desktop
+	     notifications via osascript. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>ClaudeItermMate asks iTerm2 which Claude Code sessions are still open, so it can jump to the right pane.</string>
 </dict>
 </plist>

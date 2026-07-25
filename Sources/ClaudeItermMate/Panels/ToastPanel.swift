@@ -7,7 +7,8 @@ protocol ToastPanelProtocol: AnyObject {
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
               onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
               onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
-              onChat: @escaping () -> Void)
+              onChat: @escaping () -> Void,
+              onJumpMaximized: @escaping () -> Void)
     /// Dismiss the toast. `intoTab` true → shrink toward the tab strip (it is
     /// becoming a tab); false → fade out in place (it is being dropped, so a
     /// fly-into-the-strip animation would be misleading — nothing lands there).
@@ -33,7 +34,8 @@ final class ToastPanel: ToastPanelProtocol {
               onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
               onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
               onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
-              onChat: @escaping () -> Void) {
+              onChat: @escaping () -> Void,
+              onJumpMaximized: @escaping () -> Void) {
         hide(intoTab: false)
         let height = Self.fittingHeight(item: item)
         let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
@@ -56,6 +58,7 @@ final class ToastPanel: ToastPanelProtocol {
             onClose: onClose,
             onAnswer: onAnswer,
             onChat: onChat,
+            onJumpMaximized: onJumpMaximized,
             onEditingBegan: { [weak panel] in panel?.makeKey() }
         ))
         panel.setFrame(frame, display: true)
@@ -122,6 +125,10 @@ struct ToastView: View {
     var onClose: () -> Void = {}
     var onAnswer: (ItermSendTextAction.Answer, Int) -> Void = { _, _ in }
     var onChat: () -> Void = {}
+    /// Double-click on the title row: always jump to the *maximized* pane,
+    /// regardless of the maximize-on-click toggle. Works for question toasts too,
+    /// whose card has no single-click jump.
+    var onJumpMaximized: () -> Void = {}
     var onEditingBegan: () -> Void = {}
     /// Drives the waiting toast's bright-white breathing glow (matches the tab).
     @State private var breathe = false
@@ -191,6 +198,12 @@ struct ToastView: View {
                             .fixedSize()
                     }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2, perform: onJumpMaximized)
+                // The row's own double-click gesture swallows single clicks, so
+                // re-attach the card's single-click jump here (non-question only,
+                // matching the card).
+                .tapToJump(interactiveQuestion == nil, action: onTap)
                 if let question = interactiveQuestion {
                     QuestionAnswerView(
                         question: question,

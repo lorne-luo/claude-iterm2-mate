@@ -13,12 +13,14 @@ final class ReminderCoordinatorTests: XCTestCase {
         var lastOnClose: (() -> Void)?
         var lastOnAnswer: ((ItermSendTextAction.Answer, Int) -> Void)?
         var lastOnChat: (() -> Void)?
+        var lastOnJumpMaximized: (() -> Void)?
         var lastShowsMinimize: Bool?
         func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
                   onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
                   onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
                   onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
-                  onChat: @escaping () -> Void) {
+                  onChat: @escaping () -> Void,
+                  onJumpMaximized: @escaping () -> Void) {
             shown.append(item.sessionUUID)
             lastShowsMinimize = showsMinimize
             lastOnClick = onClick
@@ -27,6 +29,7 @@ final class ReminderCoordinatorTests: XCTestCase {
             lastOnClose = onClose
             lastOnAnswer = onAnswer
             lastOnChat = onChat
+            lastOnJumpMaximized = onJumpMaximized
         }
         func hide(intoTab: Bool) { hidden += 1; hideIntoTab.append(intoTab) }
     }
@@ -573,5 +576,22 @@ final class ReminderCoordinatorTests: XCTestCase {
         toast.lastOnChat?()
         XCTAssertEqual(chatted, ["S1"])
         XCTAssertTrue(coordinator.store.items.isEmpty)
+    }
+
+    /// Double-clicking the toast title fires onJumpMaximized (the always-maximize
+    /// jump) and consumes the reminder — for a plain toast as well as a question.
+    func testToastTitleDoubleClickInvokesJumpMaximizedAndRemoves() async throws {
+        for p in [payload(session: "S1"), questionPayload(session: "S1")] {
+            let toast = SpyToast()
+            let coordinator = coordinator(toast, duration: 10)
+            var jumped: [String] = []
+            coordinator.onJumpMaximized = { item in jumped.append(item.sessionUUID) }
+            coordinator.handle(p)
+            try await settle()
+            toast.lastOnJumpMaximized?()
+            XCTAssertEqual(jumped, ["S1"])
+            XCTAssertTrue(coordinator.store.items.isEmpty)
+            XCTAssertEqual(toast.hideIntoTab, [false], "no tab is left behind — we jumped there")
+        }
     }
 }

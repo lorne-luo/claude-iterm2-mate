@@ -15,7 +15,8 @@ final class NonItermSessionTests: XCTestCase {
                   onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
                   onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
                   onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
-                  onChat: @escaping () -> Void) {
+                  onChat: @escaping () -> Void,
+                  onJumpMaximized: @escaping () -> Void) {
             shown.append(item.sessionUUID)
             lastOnClick = onClick
         }
