@@ -156,11 +156,11 @@ struct ToastView: View {
         return prefix + branch.prefix(room) + "…"
     }
 
-    /// Live badge string from the current in-memory snapshot, or nil when there
-    /// is no data yet — the title row then renders exactly as before. `@MainActor`
-    /// because `UsageService.snapshot` is main-actor-isolated; only ever read
-    /// from `body`, which is itself main-actor.
-    @MainActor private var usageBadge: String? { usage?.snapshot?.badgeText }
+    /// Live snapshot backing the usage meters, or nil when there is no data yet —
+    /// the title row then renders exactly as before. `@MainActor` because
+    /// `UsageService.snapshot` is main-actor-isolated; only ever read from `body`,
+    /// which is itself main-actor.
+    @MainActor private var usageSnapshot: UsageSnapshot? { usage?.snapshot }
 
     /// A small circular control (minimize / close) in the toast's top-right.
     /// `.buttonStyle(.plain)` keeps the tap from bubbling to the card's
@@ -178,6 +178,27 @@ struct ToastView: View {
         .accessibilityLabel(label)
     }
 
+    /// The reply text, or the interactive answer controls for a single-question
+    /// AskUserQuestion.
+    @ViewBuilder private var messageBody: some View {
+        if let question = interactiveQuestion {
+            QuestionAnswerView(
+                question: question,
+                onAnswer: onAnswer,
+                onChat: onChat,
+                onEditingBegan: onEditingBegan
+            )
+            .padding(.horizontal, -4) // QuestionAnswerView pads 16; trim inside the toast
+        } else {
+            Text(item.fullMessage)
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
+                .lineLimit(10)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             // Project-color bar ties the toast to its right-edge tab.
@@ -185,41 +206,14 @@ struct ToastView: View {
                 .fill(ReminderPalette.color(at: item.colorIndex, level: item.lightenLevel))
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(Self.title(project: item.projectName, branch: item.branchLabel))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if let badge = usageBadge {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2, perform: onJumpMaximized)
-                // The row's own double-click gesture swallows single clicks, so
-                // re-attach the card's single-click jump here (non-question only,
-                // matching the card).
-                .tapToJump(interactiveQuestion == nil, action: onTap)
-                if let question = interactiveQuestion {
-                    QuestionAnswerView(
-                        question: question,
-                        onAnswer: onAnswer,
-                        onChat: onChat,
-                        onEditingBegan: onEditingBegan
-                    )
-                    .padding(.horizontal, -4) // QuestionAnswerView pads 16; trim inside the toast
-                } else {
-                    Text(item.fullMessage)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.primary)
-                        .lineLimit(10)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                ToastTitleRow(
+                    title: Self.title(project: item.projectName, branch: item.branchLabel),
+                    snapshot: usageSnapshot,
+                    singleClickJumps: interactiveQuestion == nil,
+                    onTap: onTap,
+                    onJumpMaximized: onJumpMaximized
+                )
+                messageBody
             }
             // Top-right controls; laid out (not overlaid) so the text reserves
             // room for them and never runs underneath.
@@ -258,6 +252,44 @@ struct ToastView: View {
         // provides the jump instead.
         .tapToJump(interactiveQuestion == nil, action: onTap)
         .onHover(perform: onHover)
+        // The card cannot be a Button (it embeds buttons, and the title row
+        // needs a 2-count gesture), so its semantics are declared explicitly:
+        // one focusable element with both jump actions exposed to VoiceOver.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Self.title(project: item.projectName, branch: item.branchLabel))
+        .accessibilityAction(named: "Jump to pane") { onTap() }
+        .accessibilityAction(named: "Jump to maximized pane") { onJumpMaximized() }
+    }
+}
+
+/// Project · branch plus the usage meters, and the row's own click handling:
+/// double-click always jumps to the maximized pane, single-click mirrors the
+/// card (the row's 2-count gesture would otherwise swallow it). Extracted from
+/// `ToastView` so each view body stays small enough to type-check quickly and
+/// diff independently.
+private struct ToastTitleRow: View {
+    let title: String
+    let snapshot: UsageSnapshot?
+    /// False for a question toast, whose card intentionally has no jump-on-click.
+    let singleClickJumps: Bool
+    let onTap: () -> Void
+    let onJumpMaximized: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if let snapshot {
+                // No percents here: the meters must not squeeze the title.
+                UsageBadgeView(snapshot: snapshot, showsPercent: false)
+                    .fixedSize()
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: onJumpMaximized)
+        .tapToJump(singleClickJumps, action: onTap)
     }
 }
 

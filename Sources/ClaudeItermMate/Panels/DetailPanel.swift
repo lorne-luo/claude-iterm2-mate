@@ -3,7 +3,10 @@ import SwiftUI
 
 @MainActor
 final class DetailPanel {
-    private var panel: NSPanel?
+    private var panel: KeyablePanel?
+    /// Reused across hovers: swapping `rootView` keeps the hosted SwiftUI state
+    /// (and avoids allocating a controller per hover), unlike rebuilding it.
+    private var host: NSHostingController<DetailView>?
     private var showWork: DispatchWorkItem?
     private var hideWork: DispatchWorkItem?
     private var mouseInsideDetail = false
@@ -54,10 +57,14 @@ final class DetailPanel {
         let frame = EdgeGeometry.detailFrame(anchoring: tabFrame, size: size, visible: visible)
         // A question popup hosts a text field; it must become key (and main) to
         // receive keyboard focus. Plain popups stay non-key (never steal focus).
+        // Re-applied on every show: the panel is reused, so a question shown
+        // after a plain reminder would otherwise inherit `allowsMain == false`
+        // and its answer field could never take keyboard input.
         let editable = item.kind == .question
         let panel = self.panel ?? PanelFactory.makePanel(frame: frame, canBecomeKey: true, editable: editable)
+        panel.allowsMain = editable
         self.panel = panel
-        panel.contentViewController = NSHostingController(rootView: DetailView(
+        let root = DetailView(
             item: item,
             usage: usage,
             onHoverChanged: { [weak self] inside in
@@ -80,7 +87,14 @@ final class DetailPanel {
                 self?.dismiss()
                 self?.onJumpMaximized?(item)
             }
-        ))
+        )
+        if let host {
+            host.rootView = root
+        } else {
+            let host = NSHostingController(rootView: root)
+            panel.contentViewController = host
+            self.host = host
+        }
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
         if editable { panel.makeKey() }
@@ -137,11 +151,11 @@ struct DetailView: View {
     /// jump. Shared with ToastView via `ReminderItem.interactiveQuestion`.
     private var interactiveQuestion: NotifyPayload.Question? { item.interactiveQuestion }
 
-    /// Live `5h N% · 7d N%` from the current in-memory snapshot, or nil when
-    /// there is no data yet (the header then omits the badge). `@MainActor`
-    /// because `UsageService.snapshot` is main-actor-isolated; only ever read
-    /// from `body`, which is itself main-actor.
-    @MainActor private var usageBadge: String? { usage?.snapshot?.badgeText }
+    /// Live snapshot backing the usage meters, or nil when there is no data yet
+    /// (the header then omits them). `@MainActor` because `UsageService.snapshot`
+    /// is main-actor-isolated; only ever read from `body`, which is itself
+    /// main-actor.
+    @MainActor private var usageSnapshot: UsageSnapshot? { usage?.snapshot }
 
     /// Static "2 minutes ago" snapshot computed when the card opens — unlike
     /// SwiftUI's `.relative` style it does not tick like a countdown. Within
@@ -185,9 +199,9 @@ struct DetailView: View {
                     .help("Close")
                     .accessibilityLabel("Close")
                 }
-                // Second row: branch on the left, usage badge right-aligned.
+                // Second row: branch on the left, usage meters right-aligned.
                 // Rendered whenever either is present.
-                if item.branchLabel != nil || usageBadge != nil {
+                if item.branchLabel != nil || usageSnapshot != nil {
                     HStack(spacing: 8) {
                         if let label = item.branchLabel {
                             Label(label, systemImage: item.isWorktree ? "folder" : "arrow.triangle.branch")
@@ -195,11 +209,8 @@ struct DetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 4)
-                        if let badge = usageBadge {
-                            Text(badge)
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                        if let snapshot = usageSnapshot {
+                            UsageBadgeView(snapshot: snapshot)
                                 .fixedSize()
                         }
                     }
@@ -211,6 +222,8 @@ struct DetailView: View {
             .background(accent.opacity(0.15))
             .contentShape(Rectangle())
             .onTapGesture(count: 2, perform: onJumpMaximized)
+            // A 2-count gesture is invisible to VoiceOver; expose it as an action.
+            .accessibilityAction(named: "Jump to maximized pane", onJumpMaximized)
 
             Divider()
 

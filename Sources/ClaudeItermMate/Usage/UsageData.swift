@@ -6,6 +6,23 @@ import Foundation
 struct UsageWindow: Equatable {
     let utilization: Int      // 0–100
     let resetsAt: Date?       // nil when the API omits it (window inactive / N/A)
+
+    var level: UsageLevel { UsageLevel(utilization: utilization) }
+}
+
+/// How close a window is to its limit — drives the meter tint in
+/// `UsageBadgeView`. Coarse on purpose: comfortable under half, approaching the
+/// cap, then near it. Pure/testable so the thresholds are not buried in a view.
+enum UsageLevel: Equatable {
+    case ok, warning, critical
+
+    init(utilization: Int) {
+        switch utilization {
+        case ..<50: self = .ok
+        case ..<80: self = .warning
+        default: self = .critical
+        }
+    }
 }
 
 /// Parsed snapshot of the OAuth usage API (`GET /api/oauth/usage`).

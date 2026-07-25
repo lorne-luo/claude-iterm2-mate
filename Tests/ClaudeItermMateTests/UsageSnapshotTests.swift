@@ -70,6 +70,26 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertNil(UsageSnapshot(fiveHour: nil, weekly: nil, weeklyOpus: nil).badgeText)
     }
 
+    /// Meter tint thresholds (green under half, amber approaching, red near cap).
+    func testUsageLevelThresholds() {
+        XCTAssertEqual(UsageLevel(utilization: 0), .ok)
+        XCTAssertEqual(UsageLevel(utilization: 49), .ok)
+        XCTAssertEqual(UsageLevel(utilization: 50), .warning)
+        XCTAssertEqual(UsageLevel(utilization: 79), .warning)
+        XCTAssertEqual(UsageLevel(utilization: 80), .critical)
+        XCTAssertEqual(UsageLevel(utilization: 100), .critical)
+        XCTAssertEqual(UsageWindow(utilization: 66, resetsAt: nil).level, .warning)
+    }
+
+    /// A non-zero utilization always draws a visible dot; 0 draws nothing.
+    func testMeterFillWidth() {
+        XCTAssertEqual(UsageBadgeView.fillWidth(0, trackWidth: 30), 0)
+        XCTAssertEqual(UsageBadgeView.fillWidth(1, trackWidth: 30), UsageBadgeView.barHeight)
+        XCTAssertEqual(UsageBadgeView.fillWidth(5, trackWidth: 30), UsageBadgeView.barHeight)
+        XCTAssertEqual(UsageBadgeView.fillWidth(50, trackWidth: 30), 15)
+        XCTAssertEqual(UsageBadgeView.fillWidth(100, trackWidth: 30), 30)
+    }
+
     func testDecodeRawApiWithOnlyFiveHour() throws {
         let body = """
         {"five_hour":{"utilization":50,"resets_at":"2026-07-16T15:09:59.807Z"}}
