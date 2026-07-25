@@ -153,10 +153,13 @@ struct DetailView: View {
         if elapsed < 10 { return "just now" }
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .full
-        // Abbreviate only the seconds unit ("10 seconds ago" → "10 secs ago");
-        // other units keep their full spelling.
+        // Abbreviate the seconds and minutes units ("10 seconds ago" → "10 secs
+        // ago", "3 minutes ago" → "3 mins ago"); plural first so the singular
+        // replacement does not chop the "s". Other units keep their full spelling.
         return f.localizedString(for: date, relativeTo: Date())
             .replacingOccurrences(of: "seconds", with: "secs")
+            .replacingOccurrences(of: "minutes", with: "mins")
+            .replacingOccurrences(of: "minute", with: "min")
     }
 
     var body: some View {
