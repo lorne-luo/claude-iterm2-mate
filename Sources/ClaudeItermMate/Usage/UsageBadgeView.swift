@@ -55,9 +55,9 @@ struct UsageBadgeView: View {
     /// Filled length for a utilization. A non-zero utilization always draws at
     /// least a round dot (`barHeight` wide) — at 30pt wide, 5% would otherwise be
     /// 1.5pt and read as an empty track.
-    static func fillWidth(_ utilization: Int, trackWidth: CGFloat = UsageBadgeView.barWidth) -> CGFloat {
+    static func fillWidth(_ utilization: Int) -> CGFloat {
         guard utilization > 0 else { return 0 }
-        return max(barHeight, trackWidth * CGFloat(utilization) / 100)
+        return max(barHeight, barWidth * CGFloat(utilization) / 100)
     }
 
     static func tint(_ level: UsageLevel) -> Color {

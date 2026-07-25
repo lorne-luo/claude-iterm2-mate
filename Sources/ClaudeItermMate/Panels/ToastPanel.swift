@@ -69,7 +69,7 @@ final class ToastPanel: ToastPanelProtocol {
     /// Natural height of the toast card at `width`, clamped to [min, max], so a
     /// short message doesn't leave a tall blank card. Mirrors DetailPanel.
     private static func fittingHeight(item: ReminderItem) -> CGFloat {
-        let probe = NSHostingView(rootView: ToastView(item: item).frame(width: width))
+        let probe = NSHostingView(rootView: ToastView(item: item, scrolls: false).frame(width: width))
         probe.layoutSubtreeIfNeeded()
         return min(max(probe.fittingSize.height, minHeight), maxHeight)
     }
@@ -118,6 +118,11 @@ final class ToastPanel: ToastPanelProtocol {
 struct ToastView: View {
     let item: ReminderItem
     var usage: UsageService? = nil
+    /// true: a question's answer controls scroll within the (clamped) card.
+    /// false: natural height, used only by `fittingHeight` to measure. Without
+    /// this, a question with many options overflowed the 360pt cap and the card
+    /// silently clipped its own title row, close button and Send/Chat controls.
+    var scrolls: Bool = true
     var onTap: () -> Void = {}
     var onHover: (Bool) -> Void = { _ in }
     var showsMinimize: Bool = false
@@ -182,13 +187,18 @@ struct ToastView: View {
     /// AskUserQuestion.
     @ViewBuilder private var messageBody: some View {
         if let question = interactiveQuestion {
-            QuestionAnswerView(
+            let controls = QuestionAnswerView(
                 question: question,
                 onAnswer: onAnswer,
                 onChat: onChat,
                 onEditingBegan: onEditingBegan
             )
             .padding(.horizontal, -4) // QuestionAnswerView pads 16; trim inside the toast
+            if scrolls {
+                ScrollView { controls }
+            } else {
+                controls
+            }
         } else {
             Text(item.fullMessage)
                 .font(.system(size: 12))

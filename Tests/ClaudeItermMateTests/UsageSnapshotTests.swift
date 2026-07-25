@@ -83,11 +83,12 @@ final class UsageSnapshotTests: XCTestCase {
 
     /// A non-zero utilization always draws a visible dot; 0 draws nothing.
     func testMeterFillWidth() {
-        XCTAssertEqual(UsageBadgeView.fillWidth(0, trackWidth: 30), 0)
-        XCTAssertEqual(UsageBadgeView.fillWidth(1, trackWidth: 30), UsageBadgeView.barHeight)
-        XCTAssertEqual(UsageBadgeView.fillWidth(5, trackWidth: 30), UsageBadgeView.barHeight)
-        XCTAssertEqual(UsageBadgeView.fillWidth(50, trackWidth: 30), 15)
-        XCTAssertEqual(UsageBadgeView.fillWidth(100, trackWidth: 30), 30)
+        let track = UsageBadgeView.barWidth
+        XCTAssertEqual(UsageBadgeView.fillWidth(0), 0)
+        XCTAssertEqual(UsageBadgeView.fillWidth(1), UsageBadgeView.barHeight)
+        XCTAssertEqual(UsageBadgeView.fillWidth(5), UsageBadgeView.barHeight)
+        XCTAssertEqual(UsageBadgeView.fillWidth(50), track / 2)
+        XCTAssertEqual(UsageBadgeView.fillWidth(100), track)
     }
 
     func testDecodeRawApiWithOnlyFiveHour() throws {

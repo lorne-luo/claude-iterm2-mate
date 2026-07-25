@@ -241,7 +241,13 @@ struct DetailView: View {
 
     @ViewBuilder private var messageBody: some View {
         if let question = interactiveQuestion {
+            // `.id(sessionUUID)` is load-bearing: DetailPanel reuses one hosting
+            // controller across hovers, so without a per-item identity the
+            // answer controls keep their @State (typed text, ticked options) when
+            // the popup switches to a DIFFERENT session's question — Send would
+            // then inject one session's answer into another's TUI.
             let controls = QuestionAnswerView(question: question, onAnswer: onAnswer, onChat: onChat)
+                .id(item.sessionUUID)
             if scrolls {
                 ScrollView { controls }
             } else {

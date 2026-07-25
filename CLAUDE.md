@@ -70,7 +70,7 @@ NotifyServer  -> NotifyPayload.decode  -> ReminderCoordinator.handle
   ├─ resolve       -> ReminderStore.remove
   └─ Stop/Notification/ask ->
        colorPaneIfNeeded + injectColorIfNeeded (ItermColorAction /color) + usage.refreshIfStale
-       + reconcile (GC color/flag/dead-tab for closed panes via live it2 session set)
+       + reconcile (GC color/flag/dead-tab for closed panes via live AppleScript session set)
        -> ReminderStore.upsert -> ToastTimer (8s, pausable) -> toasting -> queued
        -> ToastPanel --fly-in--> TabStripPanel (right edge) --hover--> DetailPanel
 Click a tab/toast -> ItermFocusAction (focus / focus+maximize) -> ReminderStore.remove
@@ -94,12 +94,18 @@ mirroring how tabs separate them by a lighten step. All gating/dedup (`coloredSe
 
 **AskUserQuestion** (`--event ask` / `ask-done`): a PreToolUse hook (matcher
 `AskUserQuestion`) surfaces the question + options as a rich waiting tab
-(`ReminderItem.kind == .question`, carrying `NotifyPayload.questions`); the
-both the DetailPanel and the toast render answer controls (`QuestionAnswerView`:
+(`ReminderItem.kind == .question`, carrying `NotifyPayload.questions`); both the
+DetailPanel and the toast render answer controls (`QuestionAnswerView`:
 option buttons, a free-text field, "Chat about this") for a single-question
 prompt — the toast stays non-key until the free-text field is clicked
 (`onEditingBegan` → `panel.makeKey()`) so it never steals terminal focus on
-appearance. Answering injects keystrokes into the
+appearance. Both surfaces scroll their controls (`scrolls` flag; the measuring
+probe passes `false`): a many-option question exceeds the toast's 360pt cap, and
+without a `ScrollView` the card clipped its own title row, close button and
+Send/Chat controls — verified with 8 options. The detail popup additionally needs
+`.id(item.sessionUUID)` on `QuestionAnswerView`, since it reuses one hosting
+controller and would otherwise carry typed text / ticked options over to a
+*different* session's question. Answering injects keystrokes into the
 owning pane via `ItermSendTextAction` (`it2 session send -s <uuid>`); the exact
 TUI sequences (single digit selects+submits; free text = "Type something" row +
 text + `\r`; multiSelect = digit toggles + right-arrow + Submit) were verified
@@ -137,7 +143,7 @@ Key pieces (all under `Sources/ClaudeItermMate/`):
 - **Server/NotifyServer** — POSIX `AF_UNIX` + `DispatchSource` listener (NOT Network.framework `NWListener`). One message per connection; the listener FD is closed in the source's cancel handler (on the serial queue) to avoid a close-during-accept race. Single-instance guard: if the socket is already connectable, the second instance quits.
 - **Server/NotifyPayload** — `Codable` model; `decode` validates and enforces a 1 MB cap. `type` selects the branch (`session_start` / `resolve` / reminder); `isStop`, `isQuestion`, `isSessionStart`, `isResolve` are derived. Git fields (`repo_root`, `branch`, `is_worktree`) and `status` are optional for backward compatibility; `sessionStatus` maps the wire string to `SessionStatus`.
 - **Store/ReminderStore** — `@Observable` single source of truth. `ReminderItem.phase` is `.toasting(token:)` or `.queued`; `.status` is `.completed`/`.waiting`; `.kind` is `.plain`/`.question`. The tab strip renders only `.queued`. Dedup is by iTerm2 session UUID. Owns the shared `ColorAssigner` and assigns `colorIndex` + per-project `lightenLevel` (concurrent same-directory sessions get incremental lighten steps) at upsert. `refreshContent` updates content in place without touching phase/token/status (no-repeat-toast path). Timer-free and synchronous so it is fully unit-testable.
-- **ReminderCoordinator** — owns the `ToastTimer`s and the toasting→queued transition; a per-toast token prevents an older session's expiring timer from hiding a newer session's visible toast. Also routes `session_start`/`resolve`, drives pane coloring + `/color` injection + usage refresh, plays the reminder sound once per genuinely-presented toast, and emits the non-iTerm2 desktop notification. A waiting session already showing a waiting tab/toast is refreshed in place (no repeat toast — guards a permission storm). On each reminder it reuses the off-main iTerm2 probe (now the full live-session set, not just a `canFind`) to `reconcile`: any session absent from the live set has its color hex, once-per-session `/color` flag, and dead tab GC'd — the lazy way pane closure is detected. Reconcile is skipped when the live set is unknown (`liveSessionIDs() == nil`), so a transient `it2` failure never wipes live sessions.
+- **ReminderCoordinator** — owns the `ToastTimer`s and the toasting→queued transition; a per-toast token prevents an older session's expiring timer from hiding a newer session's visible toast. Also routes `session_start`/`resolve`, drives pane coloring + `/color` injection + usage refresh, plays the reminder sound once per genuinely-presented toast, and emits the non-iTerm2 desktop notification. A waiting session already showing a waiting tab/toast is refreshed in place (no repeat toast — guards a permission storm). On each reminder it reuses the off-main iTerm2 probe (now the full live-session set, not just a `canFind`) to `reconcile`: any session absent from the live set has its color hex, once-per-session `/color` flag, and dead tab GC'd — the lazy way pane closure is detected. Reconcile is skipped when the live set is unknown (`liveSessionIDs() == nil`), so a transient enumeration failure never wipes live sessions.
 - **ToastTimer** — a pausable one-shot countdown (default 8 s). Hovering the toast pauses it (user is reading); leaving resumes from the banked remaining time, not a fresh full term.
 - **AppSettings** — `UserDefaults`-backed toggles mirrored in the menu bar: `showNonIterm`, `colorPanes`, `showTabStrip`, `playSound` (all default true). `ReminderCoordinator` reads them through injected closures so its logic stays testable.
 - **Identity/ReminderIdentity** — pure derivation from a payload: `key` = repoRoot (else cwd), `project` = basename, `worktreeGlyph` (branch last-segment initial, or `●` for main/none), `colorIndex` = stable FNV-1a hash of key mod `paletteCount` (8). `locationLabel` picks the branch name or the shorter of relative/absolute worktree path.

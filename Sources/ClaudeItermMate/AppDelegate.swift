@@ -64,19 +64,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             self?.store.remove(sessionUUID: item.sessionUUID)
         }
-        // "Chat about this": jump to and maximize the pane, then drop the tab.
-        let chatHandler: (ReminderItem) -> Void = { [weak self] item in
+        // Jump to and maximize the pane, then drop the tab. Shared by two
+        // triggers with identical behavior: "Chat about this" on a question card,
+        // and a double-click on any title row.
+        let jumpMaximizedHandler: (ReminderItem) -> Void = { [weak self] item in
             self?.focusAction.focus(sessionUUID: item.sessionUUID, maximize: true)
             self?.store.remove(sessionUUID: item.sessionUUID)
         }
         detail.onAnswer = answerHandler
-        detail.onChat = chatHandler
+        detail.onChat = jumpMaximizedHandler
         coordinator.onAnswer = answerHandler
-        coordinator.onChat = chatHandler
+        coordinator.onChat = jumpMaximizedHandler
         // Double-clicking a title row (toast or hover popup) is the same jump:
         // always maximized, whatever the maximize-on-click toggle says.
-        detail.onJumpMaximized = chatHandler
-        coordinator.onJumpMaximized = chatHandler
+        detail.onJumpMaximized = jumpMaximizedHandler
+        coordinator.onJumpMaximized = jumpMaximizedHandler
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
         }

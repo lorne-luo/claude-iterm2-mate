@@ -116,7 +116,7 @@ final class ReminderCoordinator {
         NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
     }
 
-    /// Probe iTerm2 off the main thread (the `it2` query takes ~0.3 s), then
+    /// Probe iTerm2 off the main thread (the AppleScript query costs ~0.1 s), then
     /// present on main. A reminder whose session is not findable still toasts
     /// but never becomes a tab.
     func handle(_ p: NotifyPayload) {
@@ -150,7 +150,7 @@ final class ReminderCoordinator {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // One off-main probe per reminder: the full live-session set doubles
             // as the findability answer (`contains`) and the reconcile input, so
-            // there is no extra `it2` call. `live?.contains ?? canFind` short-
+            // there is no extra probe spawn. `live?.contains ?? canFind` short-
             // circuits — when `live` is known the second spawn is never made; a
             // stub whose `liveSessionIDs()` defaults to nil falls back to canFind
             // and skips reconcile, preserving existing test behavior.
@@ -167,8 +167,8 @@ final class ReminderCoordinator {
     /// GC in-memory session state against the live iTerm2 session set: a closed
     /// pane drops out of `live`, so its color hex, inject-once flag, and any
     /// dead tab are removed. Called only when the live set is known
-    /// (`liveSessionIDs() != nil`), never on probe failure — a transient `it2`
-    /// error must not wipe live sessions. Runs on the main actor before
+    /// (`liveSessionIDs() != nil`), never on probe failure — a transient
+    /// enumeration error must not wipe live sessions. Runs on the main actor before
     /// `present`, so the current event's session (if alive) is in `live` and
     /// survives; if it is already closed it is dropped and `present` builds no
     /// tab (findable == false). The dead-tab sweep also backstops a force-closed
