@@ -98,6 +98,21 @@ final class ReminderCoordinator {
     /// session is recorded only when injection actually fires. (R4)
     private var colorInjectedSessions: Set<String> = []
 
+    /// `prompt_id`s already surfaced as a rich AskUserQuestion. The companion
+    /// `permission_prompt` Notification carries the same id, so it can be
+    /// recognised and dropped WITHOUT consulting the store — `reconcile` runs
+    /// before `present` and GCs items whose session is not in the live set, which
+    /// used to make the store-state guard miss and let the generic event clobber
+    /// the rich question toast.
+    ///
+    /// Deliberately NOT keyed by session and NOT filtered in `reconcile` (unlike
+    /// `coloredSessions` / `colorInjectedSessions`): filtering it against the live
+    /// set would drop the memory for exactly the un-findable sessions this fixes,
+    /// reintroducing the bug. Bounded FIFO instead — only a handful of prompts are
+    /// ever in flight, and this must not grow for the life of the process.
+    private var questionPromptIDs: [String] = []
+    private static let maxRememberedQuestionPrompts = 32
+
     init(
         store: ReminderStore,
         toastDuration: TimeInterval = 8.0,
@@ -161,6 +176,15 @@ final class ReminderCoordinator {
                 if let live { self.reconcile(live: live) }
                 self.present(p, findable: findable)
             }
+        }
+    }
+
+    /// Record a presented question's `prompt_id`, oldest-out once the bound is hit.
+    private func rememberQuestionPrompt(_ id: String) {
+        guard !questionPromptIDs.contains(id) else { return }
+        questionPromptIDs.append(id)
+        if questionPromptIDs.count > Self.maxRememberedQuestionPrompts {
+            questionPromptIDs.removeFirst()
         }
     }
 
@@ -232,10 +256,21 @@ final class ReminderCoordinator {
     private func present(_ p: NotifyPayload, findable: Bool) {
         let session = p.sessionUUID
         // AskUserQuestion fires a rich `question` PreToolUse *and* a generic
-        // `permission_prompt` Notification for the same session. Never let the
-        // generic waiting event clobber a live question tab — drop it. A
-        // completed event (Stop self-heal) is not dropped, so the tab still
-        // resolves at turn end.
+        // `permission_prompt` Notification for the same session, sharing one
+        // `prompt_id`. Match on that id: it survives `reconcile` having GC'd the
+        // question item (which happens whenever the session is not in the iTerm2
+        // live set, e.g. a closed pane whose Claude process is still alive), where
+        // the store-state guard below misses and the generic event would clobber
+        // the rich question toast. A genuine permission request carries a
+        // *different* prompt_id and still gets through.
+        if !p.isQuestion, p.sessionStatus == .waiting,
+           let promptID = p.promptID, questionPromptIDs.contains(promptID) {
+            return
+        }
+        // Fallback for payloads with no `prompt_id` (a hook script published
+        // before that field): drop the generic waiting event while a question item
+        // is still in the store. Kept so behavior is unchanged until the user's
+        // next app launch republishes the scripts.
         if !p.isQuestion, p.sessionStatus == .waiting,
            let existing = store.items.first(where: { $0.sessionUUID == session }),
            existing.kind == .question {
@@ -259,6 +294,9 @@ final class ReminderCoordinator {
             )
             return
         }
+        // Remember the prompt only for a question that is actually being
+        // presented, so the companion permission event can be matched later.
+        if p.isQuestion, let promptID = p.promptID { rememberQuestionPrompt(promptID) }
         // A genuinely new toast is about to fly in (past both dedup guards):
         // play the reminder sound once. Covers completed and waiting alike; a
         // refreshed-in-place waiting event returned above, so no storm re-plays.

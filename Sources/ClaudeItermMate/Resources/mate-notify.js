@@ -150,6 +150,12 @@ function baseFields(input, cwd, focusable, sessionUUID) {
     timestamp: Date.now(),
   };
   if (!focusable) fields.focusable = false;
+  // Claude Code's per-turn prompt id. An AskUserQuestion PreToolUse and the
+  // generic `permission_prompt` Notification it also fires carry the SAME id
+  // (verified live), which lets the app drop the companion event without
+  // consulting its store. Set here rather than per handler so every event
+  // reports it consistently.
+  if (typeof input.prompt_id === "string" && input.prompt_id) fields.prompt_id = input.prompt_id;
   if (git.repo_root) fields.repo_root = git.repo_root;
   if (git.branch) fields.branch = git.branch;
   if (git.is_worktree) fields.is_worktree = true;

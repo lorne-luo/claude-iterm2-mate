@@ -112,8 +112,20 @@ owning pane via `ItermSendTextAction` (`it2 session send -s <uuid>`); the exact
 TUI sequences (single digit selects+submits; free text = "Type something" row +
 text + `\r`; multiSelect = digit toggles + right-arrow + Submit) were verified
 against the real TUI. AskUserQuestion also fires a generic `permission_prompt`
-Notification for the same session — the coordinator drops that generic waiting
-event when a `.question` tab already exists so it cannot clobber the rich detail.
+Notification for the same session, sharing one **`prompt_id`** (verified live) —
+the coordinator remembers the prompt ids it has surfaced as questions
+(`questionPromptIDs`, a bounded FIFO) and drops the companion waiting event by id,
+so it cannot clobber the rich detail. Matching on the id rather than on "a
+`.question` item exists in the store" is essential: `handle` runs `reconcile`
+**before** `present`, and reconcile GCs items whose session is not in the iTerm2
+live set (a closed pane whose Claude process is still alive), which deleted the
+question item out from under the old store-state check and let the generic toast
+win. That memory is therefore deliberately NOT keyed by session and NOT filtered
+in `reconcile` — doing so would drop it for exactly the un-findable sessions this
+protects. A genuine permission request carries a *different* `prompt_id` and still
+gets through. The store-state check is kept as a fallback for hook scripts
+published before `prompt_id` (it still misses once reconcile has GC'd, which
+resolves itself on the next app launch when `install()` republishes the scripts).
 A PostToolUse `resolve` clears the tab on answer (Stop upsert is the backstop).
 Interactive answering is limited to single-question prompts; multi-question
 prompts fall back to "Chat about this" (jump).
@@ -143,7 +155,7 @@ title. `badgeText` survives as the meters' VoiceOver label.
 Key pieces (all under `Sources/ClaudeItermMate/`):
 
 - **Server/NotifyServer** — POSIX `AF_UNIX` + `DispatchSource` listener (NOT Network.framework `NWListener`). One message per connection; the listener FD is closed in the source's cancel handler (on the serial queue) to avoid a close-during-accept race. Single-instance guard: if the socket is already connectable, the second instance quits.
-- **Server/NotifyPayload** — `Codable` model; `decode` validates and enforces a 1 MB cap. `type` selects the branch (`session_start` / `resolve` / reminder); `isStop`, `isQuestion`, `isSessionStart`, `isResolve` are derived. Git fields (`repo_root`, `branch`, `is_worktree`) and `status` are optional for backward compatibility; `sessionStatus` maps the wire string to `SessionStatus`.
+- **Server/NotifyPayload** — `Codable` model; `decode` validates and enforces a 1 MB cap. `type` selects the branch (`session_start` / `resolve` / reminder); `isStop`, `isQuestion`, `isSessionStart`, `isResolve` are derived. Git fields (`repo_root`, `branch`, `is_worktree`), `status` and `prompt_id` are optional for backward compatibility; `sessionStatus` maps the wire string to `SessionStatus`. `prompt_id` is Claude Code's per-turn id, shared by an AskUserQuestion PreToolUse and the `permission_prompt` Notification it also fires — see the AskUserQuestion note above.
 - **Store/ReminderStore** — `@Observable` single source of truth. `ReminderItem.phase` is `.toasting(token:)` or `.queued`; `.status` is `.completed`/`.waiting`; `.kind` is `.plain`/`.question`. The tab strip renders only `.queued`. Dedup is by iTerm2 session UUID. Owns the shared `ColorAssigner` and assigns `colorIndex` + per-project `lightenLevel` (concurrent same-directory sessions get incremental lighten steps) at upsert. `refreshContent` updates content in place without touching phase/token/status (no-repeat-toast path). Timer-free and synchronous so it is fully unit-testable.
 - **ReminderCoordinator** — owns the `ToastTimer`s and the toasting→queued transition; a per-toast token prevents an older session's expiring timer from hiding a newer session's visible toast. Also routes `session_start`/`resolve`, drives pane coloring + `/color` injection + usage refresh, plays the reminder sound once per genuinely-presented toast, and emits the non-iTerm2 desktop notification. A waiting session already showing a waiting tab/toast is refreshed in place (no repeat toast — guards a permission storm). On each reminder it reuses the off-main iTerm2 probe (now the full live-session set, not just a `canFind`) to `reconcile`: any session absent from the live set has its color hex, once-per-session `/color` flag, and dead tab GC'd — the lazy way pane closure is detected. Reconcile is skipped when the live set is unknown (`liveSessionIDs() == nil`), so a transient enumeration failure never wipes live sessions.
 - **ToastTimer** — a pausable one-shot countdown (default 8 s). Hovering the toast pauses it (user is reading); leaving resumes from the banked remaining time, not a fresh full term.
