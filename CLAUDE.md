@@ -62,6 +62,7 @@ Node Stop hook (Resources/mate-notify.js)                    -> reminder; status
 Node Notification hook (mate-notify.js --event notification) -> reminder; status: waiting (permission_prompt)
 Node PreToolUse hook  (mate-notify.js --event ask)           -> reminder; type: question (+ questions[])
 Node PostToolUse hook (mate-notify.js --event ask-done)      -> type: resolve (clear the tab)
+Node SessionEnd hook  (mate-notify.js --event session-end)   -> type: resolve (clear the tab on exit)
 Node SessionStart hook (Resources/mate-session-start.js)     -> type: session_start (color the pane)
   --unix socket, one JSON message per connection (close = frame boundary)-->
 NotifyServer  -> NotifyPayload.decode  -> ReminderCoordinator.handle
@@ -69,9 +70,11 @@ NotifyServer  -> NotifyPayload.decode  -> ReminderCoordinator.handle
   ├─ resolve       -> ReminderStore.remove
   └─ Stop/Notification/ask ->
        colorPaneIfNeeded + injectColorIfNeeded (ItermColorAction /color) + usage.refreshIfStale
+       + reconcile (GC color/flag/dead-tab for closed panes via live AppleScript session set)
        -> ReminderStore.upsert -> ToastTimer (8s, pausable) -> toasting -> queued
        -> ToastPanel --fly-in--> TabStripPanel (right edge) --hover--> DetailPanel
 Click a tab/toast -> ItermFocusAction (focus / focus+maximize) -> ReminderStore.remove
+Double-click a title row (toast or hover detail) -> focus+maximize ALWAYS -> ReminderStore.remove
 Answer a question in DetailPanel -> ItermSendTextAction (it2 session send) -> pane
 Non-iTerm2 session -> AppDelegate.desktopNotify (osascript) — never a tab
 ```
@@ -91,15 +94,38 @@ mirroring how tabs separate them by a lighten step. All gating/dedup (`coloredSe
 
 **AskUserQuestion** (`--event ask` / `ask-done`): a PreToolUse hook (matcher
 `AskUserQuestion`) surfaces the question + options as a rich waiting tab
-(`ReminderItem.kind == .question`, carrying `NotifyPayload.questions`); the
-DetailPanel renders answer controls (`QuestionAnswerView`: option buttons, a
-free-text field, "Chat about this"). Answering injects keystrokes into the
+(`ReminderItem.kind == .question`, carrying `NotifyPayload.questions`); both the
+DetailPanel and the toast render answer controls (`QuestionAnswerView`:
+option buttons, a free-text field, "Chat about this") for a single-question
+prompt — the toast stays non-key until the free-text field is clicked
+(`onEditingBegan` → `panel.makeKey()`) so it never steals terminal focus on
+appearance. Both surfaces scroll their controls as a fallback (`scrolls` flag; the
+measuring probe passes `false`) for when the content exceeds the card's cap —
+without a `ScrollView` the card clipped its own title row, close button and
+Send/Chat controls. An 8-option question measures **689pt** and now fits inside
+the toast's 700pt cap without scrolling (it used to be capped at 360). The detail
+popup additionally needs
+`.id(item.sessionUUID)` on `QuestionAnswerView`, since it reuses one hosting
+controller and would otherwise carry typed text / ticked options over to a
+*different* session's question. Answering injects keystrokes into the
 owning pane via `ItermSendTextAction` (`it2 session send -s <uuid>`); the exact
 TUI sequences (single digit selects+submits; free text = "Type something" row +
 text + `\r`; multiSelect = digit toggles + right-arrow + Submit) were verified
 against the real TUI. AskUserQuestion also fires a generic `permission_prompt`
-Notification for the same session — the coordinator drops that generic waiting
-event when a `.question` tab already exists so it cannot clobber the rich detail.
+Notification for the same session, sharing one **`prompt_id`** (verified live) —
+the coordinator remembers the prompt ids it has surfaced as questions
+(`questionPromptIDs`, a bounded FIFO) and drops the companion waiting event by id,
+so it cannot clobber the rich detail. Matching on the id rather than on "a
+`.question` item exists in the store" is essential: `handle` runs `reconcile`
+**before** `present`, and reconcile GCs items whose session is not in the iTerm2
+live set (a closed pane whose Claude process is still alive), which deleted the
+question item out from under the old store-state check and let the generic toast
+win. That memory is therefore deliberately NOT keyed by session and NOT filtered
+in `reconcile` — doing so would drop it for exactly the un-findable sessions this
+protects. A genuine permission request carries a *different* `prompt_id` and still
+gets through. The store-state check is kept as a fallback for hook scripts
+published before `prompt_id` (it still misses once reconcile has GC'd, which
+resolves itself on the next app launch when `install()` republishes the scripts).
 A PostToolUse `resolve` clears the tab on answer (Stop upsert is the backstop).
 Interactive answering is limited to single-question prompts; multi-question
 prompts fall back to "Chat about this" (jump).
@@ -120,28 +146,33 @@ session_start): read claude-hud's local `.usage-cache.json` when present, else s
 OAuth usage API (`GET api.anthropic.com/api/oauth/usage`) using the bearer token read from the
 Keychain via `/usr/bin/security` (`KeychainReader`, `Process` with absolute path + arg array — no
 shell). All blocking IO (disk read, `security` fork, network) runs off the main actor. The snapshot
-renders a compact `5h N% · 7d N%` badge in the toast/detail title rows (`badgeText`).
+renders as two thin meters (`UsageBadgeView`: a 30×3 Capsule track per window) in the toast title row
+and the detail header — bar length is the utilization, tint is `UsageLevel` (green <50%, amber <80%,
+red above), and a non-zero utilization always draws at least a visible dot (`fillWidth`). The detail
+header adds the numeric percent; the toast omits it so the meters never squeeze the project · branch
+title. `badgeText` survives as the meters' VoiceOver label.
 
 Key pieces (all under `Sources/ClaudeItermMate/`):
 
 - **Server/NotifyServer** — POSIX `AF_UNIX` + `DispatchSource` listener (NOT Network.framework `NWListener`). One message per connection; the listener FD is closed in the source's cancel handler (on the serial queue) to avoid a close-during-accept race. Single-instance guard: if the socket is already connectable, the second instance quits.
-- **Server/NotifyPayload** — `Codable` model; `decode` validates and enforces a 1 MB cap. `type` selects the branch (`session_start` / `resolve` / reminder); `isStop`, `isQuestion`, `isSessionStart`, `isResolve` are derived. Git fields (`repo_root`, `branch`, `is_worktree`) and `status` are optional for backward compatibility; `sessionStatus` maps the wire string to `SessionStatus`.
+- **Server/NotifyPayload** — `Codable` model; `decode` validates and enforces a 1 MB cap. `type` selects the branch (`session_start` / `resolve` / reminder); `isStop`, `isQuestion`, `isSessionStart`, `isResolve` are derived. Git fields (`repo_root`, `branch`, `is_worktree`), `status` and `prompt_id` are optional for backward compatibility; `sessionStatus` maps the wire string to `SessionStatus`. `prompt_id` is Claude Code's per-turn id, shared by an AskUserQuestion PreToolUse and the `permission_prompt` Notification it also fires — see the AskUserQuestion note above.
 - **Store/ReminderStore** — `@Observable` single source of truth. `ReminderItem.phase` is `.toasting(token:)` or `.queued`; `.status` is `.completed`/`.waiting`; `.kind` is `.plain`/`.question`. The tab strip renders only `.queued`. Dedup is by iTerm2 session UUID. Owns the shared `ColorAssigner` and assigns `colorIndex` + per-project `lightenLevel` (concurrent same-directory sessions get incremental lighten steps) at upsert. `refreshContent` updates content in place without touching phase/token/status (no-repeat-toast path). Timer-free and synchronous so it is fully unit-testable.
-- **ReminderCoordinator** — owns the `ToastTimer`s and the toasting→queued transition; a per-toast token prevents an older session's expiring timer from hiding a newer session's visible toast. Also routes `session_start`/`resolve`, drives pane coloring + `/color` injection + usage refresh, plays the reminder sound once per genuinely-presented toast, and emits the non-iTerm2 desktop notification. A waiting session already showing a waiting tab/toast is refreshed in place (no repeat toast — guards a permission storm).
+- **ReminderCoordinator** — owns the `ToastTimer`s and the toasting→queued transition; a per-toast token prevents an older session's expiring timer from hiding a newer session's visible toast. Also routes `session_start`/`resolve`, drives pane coloring + `/color` injection + usage refresh, plays the reminder sound once per genuinely-presented toast, and emits the non-iTerm2 desktop notification. A waiting session already showing a waiting tab/toast is refreshed in place (no repeat toast — guards a permission storm). On each reminder it reuses the off-main iTerm2 probe (now the full live-session set, not just a `canFind`) to `reconcile`: any session absent from the live set has its color hex, once-per-session `/color` flag, and dead tab GC'd — the lazy way pane closure is detected. Reconcile is skipped when the live set is unknown (`liveSessionIDs() == nil`), so a transient enumeration failure never wipes live sessions.
 - **ToastTimer** — a pausable one-shot countdown (default 8 s). Hovering the toast pauses it (user is reading); leaving resumes from the banked remaining time, not a fresh full term.
 - **AppSettings** — `UserDefaults`-backed toggles mirrored in the menu bar: `showNonIterm`, `colorPanes`, `showTabStrip`, `playSound` (all default true). `ReminderCoordinator` reads them through injected closures so its logic stays testable.
 - **Identity/ReminderIdentity** — pure derivation from a payload: `key` = repoRoot (else cwd), `project` = basename, `worktreeGlyph` (branch last-segment initial, or `●` for main/none), `colorIndex` = stable FNV-1a hash of key mod `paletteCount` (8). `locationLabel` picks the branch name or the shorter of relative/absolute worktree path.
 - **Identity/ColorAssigner** — in-memory, collision-averse project→slot authority shared with the tab renderer and `/color` injection; preferred slot is the FNV-1a hash, linear-probed to a free slot when possible. Pure/synchronous/testable.
 - **Identity/PaneShade** — worktree darkness level (0 = mainline, 1…levels-1 hashed from branch) for pane backgrounds — the dark-space analog of the tab lighten level.
 - **Identity/ReminderPalette** — 8-color categorical palette; `names` are Claude Code's 8 `/color` **hues** — the full `/color` set is `red|blue|green|yellow|purple|orange|pink|cyan|default`, and `default` is deliberately excluded (it clears the color rather than being a hue). Order is a stable contract — reordering reassigns every project. Tabs render bright `rgb`, lightened per worktree level; pane backgrounds render dark variants solved to a fixed target luminance (`backgroundHex`); glyph foreground flips black/white by luminance. `waitingAccent` (white) is deliberately NOT a slot so it never shifts the `/color` mapping.
-- **Usage/UsageService + UsageData + KeychainReader** — the usage badge subsystem (see above). `UsageSnapshot.decode` (wire) and `decodeHudCache` (claude-hud file) are pure/testable; `KeychainReader.parseAccessToken` enforces `expiresAt`.
-- **Panels/PanelFactory** — the shared `NSPanel` recipe: borderless + `.nonactivatingPanel`, floating, clear background, `canJoinAllSpaces`/`fullScreenAuxiliary`, `canBecomeKey` only when interaction is needed. ToastPanel / TabStripPanel / DetailPanel / InfoToastPanel build on it. DetailPanel measures content to size itself and hosts the usage badge + `QuestionAnswerView`.
+- **Usage/UsageService + UsageData + UsageBadgeView + KeychainReader** — the usage badge subsystem (see above). `UsageSnapshot.decode` (wire), `decodeHudCache` (claude-hud file), `UsageLevel` (tint thresholds) and `UsageBadgeView.fillWidth` are pure/testable; `KeychainReader.parseAccessToken` enforces `expiresAt`.
+- **Panels/PanelFactory** — the shared `NSPanel` recipe: borderless + `.nonactivatingPanel`, floating, clear background, `canJoinAllSpaces`/`fullScreenAuxiliary`, `canBecomeKey` only when interaction is needed. Returns a `KeyablePanel` whose `allowsKey`/`allowsMain` stay **mutable**: DetailPanel reuses one panel across items and re-applies `allowsMain` per show, since only a question item may become main (frozen-at-construction meant a question shown after a plain reminder could never focus its answer field). ToastPanel / TabStripPanel / DetailPanel / InfoToastPanel build on it. DetailPanel measures content to size itself and hosts the usage meters + `QuestionAnswerView`.
+- **Panels/ToastPanel** — the toast's height follows its content: an offscreen `NSHostingView` probe measures the card at `width` and clamps to `[56, 700]` (`maxHeight` is a last-resort anti-off-screen cap, since `EdgeGeometry.toastFrame` does no clamping of its own; 700 + the 12pt margin fits the smallest supported display). One measure-and-clamp path serves both a question (an 8-option one measures 689pt, so it no longer scrolls) and a plain reply. A plain toast whose message is truncated also gets a **chevron** under the body that grows the card downward to the full text — `toastFrame` derives y from `maxY - margin - height`, so the top edge stays put and it grows down; expanded content gets a `ScrollView` because it can still exceed the cap. Whether to offer the chevron is decided by *measuring* (`needsExpandToggle(collapsed:expanded:)`), never by estimating wrapped line counts — at 440pt a CJK glyph is ~2× a latin one, so counting characters is unreliable. `shownItem`/`shownVisible`/`shownShowsToggle` are cached only so the toggle can re-measure and re-frame; they are cleared on dismiss/hide.
 - **Actions/ItermFocusAction** — jumps to the pane. Maximize-on-click (menu toggle, `UserDefaults`) chooses between the machine-local `~/.claude/scripts/iterm-focus-pane.py` (focus + maximize) and the `it2` CLI (`app activate` + `session focus`, focus only). Also exposes `resolveIt2()` / `it2Process(...)` reused by the other `it2` actions. `plan()` is pure/tested.
-- **Actions/ItermSessionLookup** — probes `it2 session list --json` to answer "does this session still exist?" A non-findable reminder only toasts and never becomes a dead, un-jumpable tab. `parseSessionIDs` is pure/tested.
+- **Actions/ItermSessionLookup** — enumerates live sessions over **AppleScript** (`osascript -e 'tell application "iTerm2" to get id of every session of every tab of every window'`, guarded by `is running` so it never launches iTerm2) to answer "does this session still exist?" **Not** `it2 session list`: with a tab in "Maximize Active Pane" the iTerm2 Python API exposes only the maximized session, which made every other session un-findable (click → toast vanished without jumping, no tab, and reconcile GC'd the live tabs). A non-findable reminder only toasts and never becomes a dead, un-jumpable tab. `liveSessionIDs()` returns the full live set (or `nil` when the query fails) and doubles as the coordinator's reconcile input; the `ItermSessionProbe` protocol declares it with an extension default of `nil` so stubs skip GC. `parseSessionIDs` is pure/tested.
 - **Actions/ItermBgColorAction** — sets the pane background by spawning `set-pane-bg.py <uuid> <RRGGBB>` (iTerm2 Python API). Gated on the script being present. `arguments(...)` is pure/tested.
 - **Actions/ItermColorAction** — injects `/color <name>` via `it2 session send` (ctrl+s stash + `\r` submit; see coloring note). `arguments(...)` is pure/tested.
 - **Actions/ItermSendTextAction** — answers an AskUserQuestion by injecting keystrokes into the owning pane via `it2 session send -s <uuid> <fragment>`. `injectionSequence(_:optionCount:)` and `arguments(...)` are pure/tested; sequences verified against the real TUI. Gated on `focusable`.
-- **Hook/HookStatus + Hook/HookInstaller** — the menu status light. HookStatus reads `~/.claude/settings.json`; HookInstaller copies the two bundled scripts (`mate-notify.js`, `mate-session-start.js`) to App Support and appends five hooks — Stop (`mate-notify.js`), SessionStart (`mate-session-start.js`), Notification (`mate-notify.js --event notification`, matcher `permission_prompt`), PreToolUse (`--event ask`, matcher `AskUserQuestion`), PostToolUse (`--event ask-done`, matcher `AskUserQuestion`) — each idempotent, append-only, preserving other hooks. Markers are per-event, so the four hooks sharing `mate-notify.js` never cross-delete. Scripts are published atomically (temp + swap) since `install()` re-runs on launch. HookStatus still probes only the Stop hook as the single opt-in signal. **Upgrade path**: `AppDelegate` re-runs the idempotent `install()` on launch when the hook is already installed, so new bundled hooks/scripts propagate to existing users without a manual remove+reinstall (the menu only offers Install when *not* installed).
+- **Hook/HookStatus + Hook/HookInstaller** — the menu status light. HookStatus reads `~/.claude/settings.json`; HookInstaller copies the two bundled scripts (`mate-notify.js`, `mate-session-start.js`) to App Support and appends six hooks — Stop (`mate-notify.js`), SessionStart (`mate-session-start.js`), Notification (`mate-notify.js --event notification`, matcher `permission_prompt`), PreToolUse (`--event ask`, matcher `AskUserQuestion`), PostToolUse (`--event ask-done`, matcher `AskUserQuestion`), SessionEnd (`--event session-end`, clears the tab on session exit) — each idempotent, append-only, preserving other hooks. Markers are per-event, so the five hooks sharing `mate-notify.js` never cross-delete. Scripts are published atomically (temp + swap) since `install()` re-runs on launch. HookStatus still probes only the Stop hook as the single opt-in signal. **Upgrade path**: `AppDelegate` re-runs the idempotent `install()` on launch when the hook is already installed, so new bundled hooks/scripts propagate to existing users without a manual remove+reinstall (the menu only offers Install when *not* installed).
 - **MenuBar/MenuBarController** — `NSMenuDelegate`; rebuilds on `menuNeedsUpdate` so the hook light + toggles reflect live state. `menu.autoenablesItems = false` is required — otherwise AppKit re-enables items by target and the "disabled until installed" state silently breaks.
 
 ### Bundled resources (`Sources/ClaudeItermMate/Resources/`)
@@ -158,4 +189,8 @@ Key pieces (all under `Sources/ClaudeItermMate/`):
 
 - **Paths with spaces**: the install path is `~/Library/Application Support/...` (a space). Any command written for a shell/`node`, and any path parsed out of a command, must handle the space — quote when writing (`node "<path>"`), and extract the whole path (not a whitespace-split token) when reading. Two separate bugs in this repo came from this; both have regression tests.
 - **`\r` vs `\n` for TUI submit**: Claude Code's raw-mode TUI submits on `\r` (0x0D), NOT `\n` (0x0A). `it2 session run` appends `\n` and leaves the command unsubmitted — the `it2` actions use `session send` with an explicit trailing `\r` instead (verified live).
+- **A measuring probe must render exactly what the live view renders**: `ToastPanel.fittingHeight` builds an offscreen `ToastView` to size the panel, so every input that affects height has to be passed in. It was omitting `usage` (the meters make the title row taller) and `showsExpandToggle` (the chevron's row is ~16pt — almost exactly one line), and each shortfall silently clipped the message's **last line**. Deciding whether to show the chevron therefore takes two toggle-less measurements (a fair comparison) before a third measures the final height *with* it. `.fixedSize(horizontal: false, vertical: true)` is NOT needed here despite `InfoToastView` having it — measured identical with and without, including wrapped 2760pt content, because `.frame(maxWidth: .infinity)` already constrains the width.
+- **Swap `rootView`, never rebuild the host**: `TabStripPanel` and `DetailPanel` keep their `FirstMouseHostingView` / `NSHostingController` and assign a fresh `rootView` on each render. Replacing the host discards the hosted SwiftUI `@State` — every tab's hover highlight and the waiting breathing animation restarted on each store mutation, and DetailPanel allocated a controller per hover.
+- **Tab strip controls are `Button`s, not `onTapGesture`**: tabs render only a glyph, so the Button carries the spelled-out `project · branch — waiting` label (tooltip + VoiceOver) and the glyph itself is `accessibilityHidden`. The toast card cannot be a Button (it embeds buttons and its title row needs a 2-count gesture), so it declares `accessibilityElement(children: .contain)` + both jump actions explicitly.
+- **Maximized panes hide sessions from the iTerm2 Python API**: while a tab is in "Maximize Active Pane", `tab.sessions` (and therefore `it2 session list`) reports ONLY the maximized session — verified live: 6 sessions vs 1. `app.get_session_by_id` still resolves the hidden ones, so *jumping* works; only enumeration is affected. Since maximize-on-click is the default, one jump used to make every subsequent session un-findable. Enumerate via AppleScript (`ItermSessionLookup`), never via the Python API.
 - **SourceKit false positives**: the editor often reports `Cannot find type '...'` / `No such module 'XCTest'` for cross-file symbols because it indexes files outside the SwiftPM build graph. These are noise — trust `swift build` / `swift test`, not the inline diagnostics.

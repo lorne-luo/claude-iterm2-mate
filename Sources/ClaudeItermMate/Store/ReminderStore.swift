@@ -41,6 +41,14 @@ struct ReminderItem: Identifiable, Equatable {
 
     var id: String { sessionUUID }
     var identity: ReminderIdentity { ReminderIdentity(repoRoot: repoRoot, branch: branch, cwd: cwd) }
+    /// The lone question when this reminder is an interactive single-question
+    /// AskUserQuestion; nil for plain reminders and multi-question prompts (which
+    /// render as text). Shared by DetailView and ToastView — the tty injection
+    /// sequence is only verified for a single question.
+    var interactiveQuestion: NotifyPayload.Question? {
+        guard kind == .question, questions.count == 1 else { return nil }
+        return questions.first
+    }
     var projectName: String { identity.project }
     /// Branch name for a normal checkout; worktree path (shorter of relative /
     /// absolute) for a linked worktree. Nil when there is nothing to show.

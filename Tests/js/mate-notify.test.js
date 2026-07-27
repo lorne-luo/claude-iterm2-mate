@@ -79,6 +79,7 @@ test("eventMode: maps --event <mode>, defaults to stop", () => {
   assert.strictEqual(eventMode(["--event", "notification"]), "notification");
   assert.strictEqual(eventMode(["--event", "ask"]), "ask");
   assert.strictEqual(eventMode(["--event", "ask-done"]), "ask-done");
+  assert.strictEqual(eventMode(["--event", "session-end"]), "session-end");
   assert.strictEqual(eventMode(["--event", "other"]), "stop");
   assert.strictEqual(eventMode([]), "stop");
 });
@@ -117,4 +118,17 @@ test("buildQuestionFields: tolerates missing/empty questions", () => {
   assert.strictEqual(f.type, "question");
   assert.deepStrictEqual(f.questions, []);
   assert.strictEqual(f.summary, "Waiting for input");
+});
+
+test("baseFields (via buildQuestionFields): forwards prompt_id when present", () => {
+  // The companion permission_prompt Notification shares this id, so the app can
+  // recognise and drop it without consulting its store.
+  const f = buildQuestionFields({ prompt_id: "afb14fa8" }, "/x/proj", true, "S1");
+  assert.strictEqual(f.prompt_id, "afb14fa8");
+});
+
+test("baseFields (via buildQuestionFields): omits prompt_id when absent or not a string", () => {
+  assert.ok(!("prompt_id" in buildQuestionFields({}, "/x/proj", true, "S1")));
+  assert.ok(!("prompt_id" in buildQuestionFields({ prompt_id: "" }, "/x/proj", true, "S1")));
+  assert.ok(!("prompt_id" in buildQuestionFields({ prompt_id: 42 }, "/x/proj", true, "S1")));
 });

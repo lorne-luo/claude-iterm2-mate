@@ -9,6 +9,16 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+/// A panel whose key/main eligibility stays mutable: the detail popup is reused
+/// across items and only a question item needs to become main, so `allowsMain`
+/// must be re-decided on reuse rather than frozen at construction.
+final class KeyablePanel: NSPanel {
+    var allowsKey = false
+    var allowsMain = false
+    override var canBecomeKey: Bool { allowsKey }
+    override var canBecomeMain: Bool { allowsMain }
+}
+
 /// Borderless non-activating floating panel — the keymic-pro recipe.
 /// `canBecomeKey: true` panels take key status without activating the app,
 /// which SwiftUI buttons inside need in order to receive clicks.
@@ -17,13 +27,7 @@ enum PanelFactory {
     /// field editor behind a SwiftUI `TextField` needs to accept keyboard input
     /// (the AskUserQuestion answer field). Plain panels never become main so
     /// they cannot steal the app's foreground focus.
-    static func makePanel(frame: NSRect, canBecomeKey: Bool, editable: Bool = false) -> NSPanel {
-        final class KeyablePanel: NSPanel {
-            var allowsKey = false
-            var allowsMain = false
-            override var canBecomeKey: Bool { allowsKey }
-            override var canBecomeMain: Bool { allowsMain }
-        }
+    static func makePanel(frame: NSRect, canBecomeKey: Bool, editable: Bool = false) -> KeyablePanel {
         let panel = KeyablePanel(
             contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel],

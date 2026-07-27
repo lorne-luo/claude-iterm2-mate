@@ -19,6 +19,21 @@ final class ReminderCoordinator {
     /// reminder (same as clicking its tab). Injected by AppDelegate.
     var onActivate: ((ReminderItem) -> Void)?
 
+    /// Invoked when the user answers an AskUserQuestion directly from the toast:
+    /// the chosen answer + the question's option count (to build the tty
+    /// sequence). Same contract as `DetailPanel.onAnswer`; AppDelegate wires both
+    /// to one implementation.
+    var onAnswer: ((ReminderItem, ItermSendTextAction.Answer, Int) -> Void)?
+
+    /// Invoked for "Chat about this" from the toast: jump to + maximize the pane.
+    /// Same contract as `DetailPanel.onChat`.
+    var onChat: ((ReminderItem) -> Void)?
+
+    /// Invoked when the toast's title row is double-clicked: jump to the pane and
+    /// maximize it unconditionally (ignoring the maximize-on-click toggle), then
+    /// consume the reminder. Same contract as `DetailPanel.onJumpMaximized`.
+    var onJumpMaximized: ((ReminderItem) -> Void)?
+
     /// Invoked to color a session's iTerm2 pane background (`RRGGBB` hex).
     /// AppDelegate wires this to `ItermBgColorAction` (off-main, fire-and-forget);
     /// tests observe it. Gating/dedup happen in `colorPaneIfNeeded` before this
@@ -83,6 +98,21 @@ final class ReminderCoordinator {
     /// session is recorded only when injection actually fires. (R4)
     private var colorInjectedSessions: Set<String> = []
 
+    /// `prompt_id`s already surfaced as a rich AskUserQuestion. The companion
+    /// `permission_prompt` Notification carries the same id, so it can be
+    /// recognised and dropped WITHOUT consulting the store — `reconcile` runs
+    /// before `present` and GCs items whose session is not in the live set, which
+    /// used to make the store-state guard miss and let the generic event clobber
+    /// the rich question toast.
+    ///
+    /// Deliberately NOT keyed by session and NOT filtered in `reconcile` (unlike
+    /// `coloredSessions` / `colorInjectedSessions`): filtering it against the live
+    /// set would drop the memory for exactly the un-findable sessions this fixes,
+    /// reintroducing the bug. Bounded FIFO instead — only a handful of prompts are
+    /// ever in flight, and this must not grow for the life of the process.
+    private var questionPromptIDs: [String] = []
+    private static let maxRememberedQuestionPrompts = 32
+
     init(
         store: ReminderStore,
         toastDuration: TimeInterval = 8.0,
@@ -101,7 +131,7 @@ final class ReminderCoordinator {
         NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
     }
 
-    /// Probe iTerm2 off the main thread (the `it2` query takes ~0.3 s), then
+    /// Probe iTerm2 off the main thread (the AppleScript query costs ~0.1 s), then
     /// present on main. A reminder whose session is not findable still toasts
     /// but never becomes a tab.
     func handle(_ p: NotifyPayload) {
@@ -133,8 +163,45 @@ final class ReminderCoordinator {
         injectColorIfNeeded(p)
         let probe = self.probe
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let findable = probe.canFind(p.sessionUUID)
-            DispatchQueue.main.async { [weak self] in self?.present(p, findable: findable) }
+            // One off-main probe per reminder: the full live-session set doubles
+            // as the findability answer (`contains`) and the reconcile input, so
+            // there is no extra probe spawn. `live?.contains ?? canFind` short-
+            // circuits — when `live` is known the second spawn is never made; a
+            // stub whose `liveSessionIDs()` defaults to nil falls back to canFind
+            // and skips reconcile, preserving existing test behavior.
+            let live = probe.liveSessionIDs()
+            let findable = live?.contains(p.sessionUUID) ?? probe.canFind(p.sessionUUID)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let live { self.reconcile(live: live) }
+                self.present(p, findable: findable)
+            }
+        }
+    }
+
+    /// Record a presented question's `prompt_id`, oldest-out once the bound is hit.
+    private func rememberQuestionPrompt(_ id: String) {
+        guard !questionPromptIDs.contains(id) else { return }
+        questionPromptIDs.append(id)
+        if questionPromptIDs.count > Self.maxRememberedQuestionPrompts {
+            questionPromptIDs.removeFirst()
+        }
+    }
+
+    /// GC in-memory session state against the live iTerm2 session set: a closed
+    /// pane drops out of `live`, so its color hex, inject-once flag, and any
+    /// dead tab are removed. Called only when the live set is known
+    /// (`liveSessionIDs() != nil`), never on probe failure — a transient
+    /// enumeration error must not wipe live sessions. Runs on the main actor before
+    /// `present`, so the current event's session (if alive) is in `live` and
+    /// survives; if it is already closed it is dropped and `present` builds no
+    /// tab (findable == false). The dead-tab sweep also backstops a force-closed
+    /// pane, where `SessionEnd` may never fire to clear the tab via `resolve`.
+    private func reconcile(live: Set<String>) {
+        coloredSessions = coloredSessions.filter { live.contains($0.key) }
+        colorInjectedSessions = colorInjectedSessions.filter { live.contains($0) }
+        for dead in store.items.map(\.sessionUUID) where !live.contains(dead) {
+            store.remove(sessionUUID: dead)
         }
     }
 
@@ -189,10 +256,21 @@ final class ReminderCoordinator {
     private func present(_ p: NotifyPayload, findable: Bool) {
         let session = p.sessionUUID
         // AskUserQuestion fires a rich `question` PreToolUse *and* a generic
-        // `permission_prompt` Notification for the same session. Never let the
-        // generic waiting event clobber a live question tab — drop it. A
-        // completed event (Stop self-heal) is not dropped, so the tab still
-        // resolves at turn end.
+        // `permission_prompt` Notification for the same session, sharing one
+        // `prompt_id`. Match on that id: it survives `reconcile` having GC'd the
+        // question item (which happens whenever the session is not in the iTerm2
+        // live set, e.g. a closed pane whose Claude process is still alive), where
+        // the store-state guard below misses and the generic event would clobber
+        // the rich question toast. A genuine permission request carries a
+        // *different* prompt_id and still gets through.
+        if !p.isQuestion, p.sessionStatus == .waiting,
+           let promptID = p.promptID, questionPromptIDs.contains(promptID) {
+            return
+        }
+        // Fallback for payloads with no `prompt_id` (a hook script published
+        // before that field): drop the generic waiting event while a question item
+        // is still in the store. Kept so behavior is unchanged until the user's
+        // next app launch republishes the scripts.
         if !p.isQuestion, p.sessionStatus == .waiting,
            let existing = store.items.first(where: { $0.sessionUUID == session }),
            existing.kind == .question {
@@ -216,6 +294,9 @@ final class ReminderCoordinator {
             )
             return
         }
+        // Remember the prompt only for a question that is actually being
+        // presented, so the companion permission event can be matched later.
+        if p.isQuestion, let promptID = p.promptID { rememberQuestionPrompt(promptID) }
         // A genuinely new toast is about to fly in (past both dedup guards):
         // play the reminder sound once. Covers completed and waiting alike; a
         // refreshed-in-place waiting event returned above, so no storm re-plays.
@@ -256,6 +337,27 @@ final class ReminderCoordinator {
                     // Close dismisses without a tab — drop the item outright,
                     // regardless of findability.
                     self?.complete(token: token, session: session, findable: false)
+                },
+                onAnswer: { [weak self] answer, count in
+                    // Answered from the toast: tear down (cancel timer + fade +
+                    // drop the item) then run the injected side effect. Gated on
+                    // still being the displayed toast: a second click during the
+                    // fade-out (or a click on the previous toast still fading
+                    // behind a newcomer) would otherwise inject the answer twice.
+                    guard self?.displayed?.token == token else { return }
+                    self?.complete(token: token, session: session, findable: false)
+                    self?.onAnswer?(item, answer, count)
+                },
+                onChat: { [weak self] in
+                    guard self?.displayed?.token == token else { return }
+                    self?.complete(token: token, session: session, findable: false)
+                    self?.onChat?(item)
+                },
+                onJumpMaximized: { [weak self] in
+                    // Title double-click: tear the toast down (no tab — we are
+                    // jumping there) and hand off the maximized jump.
+                    self?.complete(token: token, session: session, findable: false)
+                    self?.onJumpMaximized?(item)
                 }
             )
             displayed = Displayed(token: token, session: session, findable: findable)

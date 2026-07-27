@@ -48,6 +48,12 @@ struct NotifyPayload: Codable, Equatable {
     // Stop whose reply ends in a question); absent / anything else -> completed.
     // Backward compatible: old payloads without this field decode as completed.
     let status: String?
+    // Claude Code's per-turn prompt id. An AskUserQuestion PreToolUse and the
+    // generic `permission_prompt` Notification it also fires share this value
+    // (verified live), which is how the coordinator recognises the companion
+    // event without consulting the store. Optional: a hook script published
+    // before this feature omits it, and the app must still decode.
+    let promptID: String?
 
     enum CodingKeys: String, CodingKey {
         case sessionUUID = "session_uuid"
@@ -57,6 +63,7 @@ struct NotifyPayload: Codable, Equatable {
         case repoRoot = "repo_root"
         case branch
         case isWorktree = "is_worktree"
+        case promptID = "prompt_id"
         case type, source, focusable, status, questions
     }
 
@@ -75,6 +82,7 @@ struct NotifyPayload: Codable, Equatable {
         source = try c.decodeIfPresent(String.self, forKey: .source)
         focusable = try c.decodeIfPresent(Bool.self, forKey: .focusable) ?? true
         status = try c.decodeIfPresent(String.self, forKey: .status)
+        promptID = try c.decodeIfPresent(String.self, forKey: .promptID)
         questions = try c.decodeIfPresent([Question].self, forKey: .questions)
     }
 

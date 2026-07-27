@@ -8,6 +8,11 @@ final class TabStripPanel {
     private let onHover: (ReminderItem?, CGRect) -> Void
     private let onClearAll: () -> Void
     private var panel: NSPanel?
+    /// Reused across renders: assigning `rootView` diffs the strip in place,
+    /// whereas replacing the hosting view discards every tab's SwiftUI state —
+    /// hover highlight and the waiting breathing animation restarted on each
+    /// store mutation.
+    private var host: FirstMouseHostingView<TabStripView>?
 
     init(
         store: ReminderStore,
@@ -48,7 +53,7 @@ final class TabStripPanel {
         let panel = self.panel ?? Self.makeStripPanel()
         self.panel = panel
         panel.setFrame(frame, display: true)
-        panel.contentView = FirstMouseHostingView(rootView: TabStripView(
+        let root = TabStripView(
             items: queued,
             onClick: onClick,
             onHover: { [weak self] item, index in
@@ -61,7 +66,14 @@ final class TabStripPanel {
                 self.onHover(item, tabFrame)
             },
             onClearAll: onClearAll
-        ))
+        )
+        if let host {
+            host.rootView = root
+        } else {
+            let host = FirstMouseHostingView(rootView: root)
+            panel.contentView = host
+            self.host = host
+        }
         panel.orderFrontRegardless()
     }
 
@@ -79,16 +91,35 @@ struct TabStripView: View {
     var body: some View {
         VStack(spacing: EdgeGeometry.tabSpacing) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                EdgeTabView(item: item)
-                    .onTapGesture { onClick(item) }
-                    .onHover { inside in
-                        onHover(inside ? item : nil, inside ? index : nil)
-                    }
+                // Button (not onTapGesture) so VoiceOver sees a control and the
+                // tab gets focus handling for free; `.plain` keeps the visuals.
+                Button { onClick(item) } label: {
+                    EdgeTabView(item: item)
+                }
+                .buttonStyle(.plain)
+                .onHover { inside in
+                    onHover(inside ? item : nil, inside ? index : nil)
+                }
+                .help(Self.tooltip(item))
+                .accessibilityLabel(Self.tooltip(item))
+                .accessibilityHint("Jumps to this session's iTerm2 pane")
             }
-            CloserTabView()
-                .onTapGesture { onClearAll() }
+            Button(action: onClearAll) { CloserTabView() }
+                .buttonStyle(.plain)
+                .help("Clear all reminders")
+                .accessibilityLabel("Clear all reminders")
         }
         .frame(maxHeight: .infinity, alignment: .top)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Claude session reminders")
+    }
+
+    /// `project · branch — waiting` — the tab shows only a glyph, so this is the
+    /// only place its identity is spelled out (tooltip and VoiceOver alike).
+    static func tooltip(_ item: ReminderItem) -> String {
+        var text = item.projectName
+        if let branch = item.branchLabel { text += " · \(branch)" }
+        return item.status == .waiting ? "\(text) — waiting for you" : text
     }
 }
 
@@ -162,14 +193,17 @@ private struct EdgeTabView: View {
     }
 
     /// The main working tree shows a "home" icon; named worktrees show the
-    /// branch's initial letter.
+    /// branch's initial letter. Decorative: the enclosing Button carries the
+    /// spelled-out label, so this must not be read on its own.
     @ViewBuilder private func glyph(_ identity: ReminderIdentity) -> some View {
         if identity.isMainLine {
             Image(systemName: "house.fill")
                 .font(.system(size: 13, weight: .semibold))
+                .accessibilityHidden(true)
         } else {
             Text(identity.worktreeGlyph)
                 .font(.system(size: 14, weight: .bold, design: .rounded))
+                .accessibilityHidden(true)
         }
     }
 }
@@ -189,6 +223,7 @@ private struct CloserTabView: View {
     var body: some View {
         Image(systemName: "xmark")
             .font(.system(size: 12, weight: .bold))
+            .accessibilityHidden(true) // the enclosing Button carries the label
             .foregroundStyle(.white.opacity(hovering ? 1 : 0.75))
             .frame(width: EdgeGeometry.closerSize, height: EdgeGeometry.closerSize)
             .background(Color.black.opacity(hovering ? 0.55 : 0.35))

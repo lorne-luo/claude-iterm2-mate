@@ -260,4 +260,56 @@ final class HookInstallerTests: XCTestCase {
         XCTAssertEqual(HookInstaller.askHookCommand(scriptPath: path), "node \"\(path)\" --event ask")
         XCTAssertEqual(HookInstaller.askDoneHookCommand(scriptPath: path), "node \"\(path)\" --event ask-done")
     }
+
+    // MARK: - SessionEnd
+
+    private let sessionEndCommand =
+        "node \"/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js\" --event session-end"
+
+    func testAddsSessionEndHook() {
+        let s = HookInstaller.settingsByAddingHook(
+            [:], command: sessionEndCommand, event: "SessionEnd", marker: notifMarker
+        )
+        let se = groups(s, event: "SessionEnd")
+        XCTAssertEqual(se.map(\.command), [sessionEndCommand])
+        XCTAssertEqual(se.first?.matcher, "")
+    }
+
+    func testSessionEndHookIdempotent() {
+        var s = HookInstaller.settingsByAddingHook(
+            [:], command: sessionEndCommand, event: "SessionEnd", marker: notifMarker
+        )
+        s = HookInstaller.settingsByAddingHook(
+            s, command: sessionEndCommand, event: "SessionEnd", marker: notifMarker
+        )
+        XCTAssertEqual(groups(s, event: "SessionEnd").count, 1)
+    }
+
+    // SessionEnd shares the mate-notify.js marker with Stop/Notification/ask*;
+    // per-event scoping must keep it independent on both install and removal.
+    func testSessionEndCoexistsAndRemovesIndependently() {
+        var s = HookInstaller.settingsByAddingHook([:], command: command) // Stop
+        s = HookInstaller.settingsByAddingHook(
+            s, command: sessionEndCommand, event: "SessionEnd", marker: notifMarker
+        )
+        XCTAssertEqual(stopCommands(s), [command])
+        XCTAssertEqual(groups(s, event: "SessionEnd").map(\.command), [sessionEndCommand])
+
+        // Removing SessionEnd leaves Stop untouched; removing Stop leaves SessionEnd.
+        let noSessionEnd = HookInstaller.settingsByRemovingHook(s, event: "SessionEnd", marker: notifMarker)
+        XCTAssertTrue(groups(noSessionEnd, event: "SessionEnd").isEmpty)
+        XCTAssertEqual(stopCommands(noSessionEnd), [command])
+
+        let noStop = HookInstaller.settingsByRemovingHook(s) // Stop, mate-notify.js
+        XCTAssertTrue(stopCommands(noStop).isEmpty)
+        XCTAssertEqual(groups(noStop, event: "SessionEnd").map(\.command), [sessionEndCommand])
+    }
+
+    func testSessionEndHookCommandFormat() {
+        let path = "/Users/me/Library/Application Support/ClaudeItermMate/mate-notify.js"
+        XCTAssertEqual(
+            HookInstaller.sessionEndHookCommand(scriptPath: path),
+            "node \"\(path)\" --event session-end"
+        )
+    }
 }

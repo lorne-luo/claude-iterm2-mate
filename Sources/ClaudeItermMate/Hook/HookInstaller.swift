@@ -54,6 +54,12 @@ struct HookInstaller {
         "node \"\(scriptPath)\" --event ask-done"
     }
 
+    /// The SessionEnd command line: clears the session's reminder tab when the
+    /// Claude Code session ends (any reason). Same script in session-end mode.
+    static func sessionEndHookCommand(scriptPath: String) -> String {
+        "node \"\(scriptPath)\" --event session-end"
+    }
+
     static func settingsByAddingHook(
         _ json: [String: Any],
         command: String,
@@ -193,6 +199,16 @@ struct HookInstaller {
             marker: "mate-notify.js",
             matcher: "AskUserQuestion"
         )
+        // SessionEnd reuses mate-notify.js in --event session-end mode to clear
+        // the session's reminder tab. Marker = script name, per-event scoped, so
+        // it stays distinct from the Stop / Notification / ask hooks sharing the
+        // script and never cross-deletes them.
+        updated = Self.settingsByAddingHook(
+            updated,
+            command: Self.sessionEndHookCommand(scriptPath: Self.scriptDestURL.path),
+            event: "SessionEnd",
+            marker: "mate-notify.js"
+        )
         try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         var data = try JSONSerialization.data(
             withJSONObject: updated,
@@ -232,6 +248,9 @@ struct HookInstaller {
             )
             updated = Self.settingsByRemovingHook(
                 updated, event: "PostToolUse", marker: "mate-notify.js"
+            )
+            updated = Self.settingsByRemovingHook(
+                updated, event: "SessionEnd", marker: "mate-notify.js"
             )
             var out = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
             out.append(0x0A)

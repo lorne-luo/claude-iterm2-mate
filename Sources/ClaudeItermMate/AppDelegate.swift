@@ -55,18 +55,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Answer an AskUserQuestion by injecting keystrokes into the owning pane
         // (off-main). Optimistically remove the tab; the PostToolUse `resolve`
         // hook also clears it once the answer lands.
+        // One implementation shared by the detail popup and the toast, so
+        // answering/chatting behaves identically from either surface.
         let sendTextAction = self.sendTextAction
-        detail.onAnswer = { [weak self] item, answer, optionCount in
+        let answerHandler: (ReminderItem, ItermSendTextAction.Answer, Int) -> Void = { [weak self] item, answer, optionCount in
             DispatchQueue.global(qos: .userInitiated).async {
                 sendTextAction.answer(sessionUUID: item.sessionUUID, answer: answer, optionCount: optionCount)
             }
             self?.store.remove(sessionUUID: item.sessionUUID)
         }
-        // "Chat about this": jump to and maximize the pane, then drop the tab.
-        detail.onChat = { [weak self] item in
+        // Jump to and maximize the pane, then drop the tab. Shared by two
+        // triggers with identical behavior: "Chat about this" on a question card,
+        // and a double-click on any title row.
+        let jumpMaximizedHandler: (ReminderItem) -> Void = { [weak self] item in
             self?.focusAction.focus(sessionUUID: item.sessionUUID, maximize: true)
             self?.store.remove(sessionUUID: item.sessionUUID)
         }
+        detail.onAnswer = answerHandler
+        detail.onChat = jumpMaximizedHandler
+        coordinator.onAnswer = answerHandler
+        coordinator.onChat = jumpMaximizedHandler
+        // Double-clicking a title row (toast or hover popup) is the same jump:
+        // always maximized, whatever the maximize-on-click toggle says.
+        detail.onJumpMaximized = jumpMaximizedHandler
+        coordinator.onJumpMaximized = jumpMaximizedHandler
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
         }

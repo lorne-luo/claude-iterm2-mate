@@ -11,16 +11,25 @@ final class ReminderCoordinatorTests: XCTestCase {
         var lastOnHover: ((Bool) -> Void)?
         var lastOnMinimize: (() -> Void)?
         var lastOnClose: (() -> Void)?
+        var lastOnAnswer: ((ItermSendTextAction.Answer, Int) -> Void)?
+        var lastOnChat: (() -> Void)?
+        var lastOnJumpMaximized: (() -> Void)?
         var lastShowsMinimize: Bool?
         func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
                   onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
-                  onMinimize: @escaping () -> Void, onClose: @escaping () -> Void) {
+                  onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
+                  onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
+                  onChat: @escaping () -> Void,
+                  onJumpMaximized: @escaping () -> Void) {
             shown.append(item.sessionUUID)
             lastShowsMinimize = showsMinimize
             lastOnClick = onClick
             lastOnHover = onHover
             lastOnMinimize = onMinimize
             lastOnClose = onClose
+            lastOnAnswer = onAnswer
+            lastOnChat = onChat
+            lastOnJumpMaximized = onJumpMaximized
         }
         func hide(intoTab: Bool) { hidden += 1; hideIntoTab.append(intoTab) }
     }
@@ -28,6 +37,22 @@ final class ReminderCoordinatorTests: XCTestCase {
     struct StubProbe: ItermSessionProbe {
         let findable: Bool
         func canFind(_ uuid: String) -> Bool { findable }
+    }
+
+    /// Probe with a mutable live set for reconcile tests. `live == nil` models a
+    /// failed/unavailable query (reconcile must skip GC); `findableWhenUnknown`
+    /// lets a nil-live test still build tabs so we can assert they are retained.
+    /// Read off-main, mutated on main between serialized `settle()`s — safe under
+    /// the tests' timing, hence `@unchecked Sendable`.
+    final class ReconcileProbe: ItermSessionProbe, @unchecked Sendable {
+        var live: Set<String>?
+        let findableWhenUnknown: Bool
+        init(live: Set<String>?, findableWhenUnknown: Bool = true) {
+            self.live = live
+            self.findableWhenUnknown = findableWhenUnknown
+        }
+        func canFind(_ uuid: String) -> Bool { live?.contains(uuid) ?? findableWhenUnknown }
+        func liveSessionIDs() -> Set<String>? { live }
     }
 
     private func payload(session: String = "S1", repoRoot: String = "/tmp/proj") -> NotifyPayload {
@@ -426,5 +451,147 @@ final class ReminderCoordinatorTests: XCTestCase {
         coordinator.isPaneColoringEnabled = { true }
         coordinator.handle(payload())
         XCTAssertEqual(injected, ["S1"], "session was not marked while disabled → injects once enabled")
+    }
+
+    // MARK: - Reconcile GC of closed iTerm2 sessions
+
+    // R8: a reminder event whose live set omits a prior session GCs that dead
+    // tab; a session still in the set is retained.
+    func testReconcileRemovesDeadTabKeepsLive() async throws {
+        let toast = SpyToast()
+        let probe = ReconcileProbe(live: ["A", "B"])
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastDuration: 0.3,
+                                              toastPanel: toast, probe: probe)
+        coordinator.handle(payload(session: "A"))
+        try await settle()
+        try await Task.sleep(for: .milliseconds(400)) // A demotes to a queued tab
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["A"])
+
+        probe.live = ["B"] // A's pane is closed, set before the next event
+        coordinator.handle(payload(session: "B"))
+        try await settle()
+        XCTAssertFalse(coordinator.store.items.contains { $0.sessionUUID == "A" },
+                       "closed pane's dead tab is reconciled away")
+        XCTAssertTrue(coordinator.store.items.contains { $0.sessionUUID == "B" },
+                      "live session B is retained")
+    }
+
+    // Decision: when the live set is unknown (probe failure), reconcile is
+    // skipped — a live tab must NOT be wiped by a transient it2 failure.
+    func testReconcileSkippedWhenLiveSetUnknown() async throws {
+        let toast = SpyToast()
+        let probe = ReconcileProbe(live: nil, findableWhenUnknown: true)
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastDuration: 0.3,
+                                              toastPanel: toast, probe: probe)
+        coordinator.handle(payload(session: "A"))
+        try await settle()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(coordinator.store.queued.map(\.sessionUUID), ["A"])
+
+        coordinator.handle(payload(session: "B"))
+        try await settle()
+        XCTAssertTrue(coordinator.store.items.contains { $0.sessionUUID == "A" },
+                      "nil live set must not GC an existing tab")
+    }
+
+    // R7: a closed session's color hex + inject-once flag are GC'd, so if the
+    // same session id reappears it re-colors and re-injects.
+    func testReconcileClearsColorAndInjectFlags() async throws {
+        let toast = SpyToast()
+        let probe = ReconcileProbe(live: ["A", "B"])
+        let coordinator = ReminderCoordinator(store: ReminderStore(), toastDuration: 10,
+                                              toastPanel: toast, probe: probe)
+        var injected: [String] = []
+        var colored: [String] = []
+        coordinator.onInjectColor = { session, _ in injected.append(session) }
+        coordinator.onSetPaneBackground = { session, _ in colored.append(session) }
+
+        coordinator.handle(payload(session: "A"))
+        try await settle()
+        probe.live = ["B"] // A closed, set before the next event drops its flags
+        coordinator.handle(payload(session: "B"))
+        try await settle()
+        probe.live = ["A", "B"] // A reappears (same id), set before its re-event
+        coordinator.handle(payload(session: "A"))
+        try await settle()
+
+        XCTAssertEqual(injected.filter { $0 == "A" }.count, 2,
+                       "A's inject-once flag was GC'd, so it injects again")
+        XCTAssertEqual(colored.filter { $0 == "A" }.count, 2,
+                       "A's color hex was GC'd, so it colors again")
+    }
+
+    // MARK: - Toast question answering
+
+    private func multiQuestionPayload(session: String = "S1") -> NotifyPayload {
+        let q: [String: Any] = [
+            "question": "Pick?", "header": "H", "multiSelect": false,
+            "options": [["label": "A", "description": ""], ["label": "B", "description": ""]],
+        ]
+        return decode([
+            "session_uuid": session, "cwd": "/tmp/proj", "title": "proj",
+            "summary": "Pick?", "full_message": "Pick?", "timestamp": 1.0,
+            "type": "question", "status": "waiting", "questions": [q, q],
+        ])
+    }
+
+    // AC2: interactiveQuestion is present only for a single-question prompt.
+    func testInteractiveQuestionPredicate() {
+        let store = ReminderStore()
+        store.upsert(questionPayload(session: "Q1"))
+        XCTAssertNotNil(store.items.first { $0.sessionUUID == "Q1" }?.interactiveQuestion,
+                        "single-question prompt is interactive")
+        store.upsert(payload(session: "P1"))
+        XCTAssertNil(store.items.first { $0.sessionUUID == "P1" }?.interactiveQuestion,
+                     "plain reminder is not interactive")
+        store.upsert(multiQuestionPayload(session: "M1"))
+        XCTAssertNil(store.items.first { $0.sessionUUID == "M1" }?.interactiveQuestion,
+                     "multi-question prompt is not interactive")
+    }
+
+    // AC3: answering from the toast fires the coordinator's answer closure with
+    // the right session + option count, and removes the reminder.
+    func testToastAnswerInvokesCoordinatorAnswerAndRemoves() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        var answered: [(String, Int)] = []
+        coordinator.onAnswer = { item, _, count in answered.append((item.sessionUUID, count)) }
+        coordinator.handle(questionPayload(session: "S1"))
+        try await settle()
+        XCTAssertNotNil(toast.lastOnAnswer, "a question toast wires onAnswer")
+        toast.lastOnAnswer?(.option(1), 2)
+        XCTAssertEqual(answered.map(\.0), ["S1"])
+        XCTAssertEqual(answered.first?.1, 2)
+        XCTAssertTrue(coordinator.store.items.isEmpty, "answering removes the reminder")
+    }
+
+    // AC3: "Chat about this" from the toast fires onChat and removes the item.
+    func testToastChatInvokesCoordinatorChatAndRemoves() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        var chatted: [String] = []
+        coordinator.onChat = { item in chatted.append(item.sessionUUID) }
+        coordinator.handle(questionPayload(session: "S1"))
+        try await settle()
+        toast.lastOnChat?()
+        XCTAssertEqual(chatted, ["S1"])
+        XCTAssertTrue(coordinator.store.items.isEmpty)
+    }
+
+    /// Double-clicking the toast title fires onJumpMaximized (the always-maximize
+    /// jump) and consumes the reminder — for a plain toast as well as a question.
+    func testToastTitleDoubleClickInvokesJumpMaximizedAndRemoves() async throws {
+        for p in [payload(session: "S1"), questionPayload(session: "S1")] {
+            let toast = SpyToast()
+            let coordinator = coordinator(toast, duration: 10)
+            var jumped: [String] = []
+            coordinator.onJumpMaximized = { item in jumped.append(item.sessionUUID) }
+            coordinator.handle(p)
+            try await settle()
+            toast.lastOnJumpMaximized?()
+            XCTAssertEqual(jumped, ["S1"])
+            XCTAssertTrue(coordinator.store.items.isEmpty)
+            XCTAssertEqual(toast.hideIntoTab, [false], "no tab is left behind — we jumped there")
+        }
     }
 }

@@ -150,6 +150,12 @@ function baseFields(input, cwd, focusable, sessionUUID) {
     timestamp: Date.now(),
   };
   if (!focusable) fields.focusable = false;
+  // Claude Code's per-turn prompt id. An AskUserQuestion PreToolUse and the
+  // generic `permission_prompt` Notification it also fires carry the SAME id
+  // (verified live), which lets the app drop the companion event without
+  // consulting its store. Set here rather than per handler so every event
+  // reports it consistently.
+  if (typeof input.prompt_id === "string" && input.prompt_id) fields.prompt_id = input.prompt_id;
   if (git.repo_root) fields.repo_root = git.repo_root;
   if (git.branch) fields.branch = git.branch;
   if (git.is_worktree) fields.is_worktree = true;
@@ -358,19 +364,31 @@ function handleAskDone(raw) {
   sendPayload({ type: "resolve", session_uuid: sessionUUID, cwd, timestamp: Date.now() }, null);
 }
 
+// --event session-end: the Claude Code session ended (SessionEnd, any reason).
+// Clear its reminder tab. Identical to ask-done — same `resolve` payload and
+// same guards (darwin, not SDK, focusable). Deliberately does NOT touch the
+// app's color/inject-once memory: the iTerm2 pane may still be alive and reused.
+function handleSessionEnd(raw) {
+  handleAskDone(raw);
+}
+
 // Dispatch by CLI mode from `--event <mode>`: `notification` | `ask` |
-// `ask-done`, otherwise the default Stop path (`stop`). Only when run directly —
-// when required as a module (tests) just export the pure helpers.
+// `ask-done` | `session-end`, otherwise the default Stop path (`stop`). Only
+// when run directly — when required as a module (tests) just export the pure
+// helpers.
 function eventMode(argv) {
   const i = argv.indexOf("--event");
   const v = i >= 0 ? argv[i + 1] : undefined;
-  return v === "notification" || v === "ask" || v === "ask-done" ? v : "stop";
+  return v === "notification" || v === "ask" || v === "ask-done" || v === "session-end"
+    ? v
+    : "stop";
 }
 
 const HANDLERS = {
   notification: handleNotification,
   ask: handleAsk,
   "ask-done": handleAskDone,
+  "session-end": handleSessionEnd,
   stop: main,
 };
 

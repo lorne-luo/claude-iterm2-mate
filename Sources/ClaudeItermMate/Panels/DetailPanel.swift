@@ -3,7 +3,10 @@ import SwiftUI
 
 @MainActor
 final class DetailPanel {
-    private var panel: NSPanel?
+    private var panel: KeyablePanel?
+    /// Reused across hovers: swapping `rootView` keeps the hosted SwiftUI state
+    /// (and avoids allocating a controller per hover), unlike rebuilding it.
+    private var host: NSHostingController<DetailView>?
     private var showWork: DispatchWorkItem?
     private var hideWork: DispatchWorkItem?
     private var mouseInsideDetail = false
@@ -22,6 +25,10 @@ final class DetailPanel {
 
     /// Invoked for "Chat about this": jump to + maximize the owning pane.
     var onChat: ((ReminderItem) -> Void)?
+
+    /// Invoked when the popup's header is double-clicked: jump to the owning pane
+    /// and maximize it unconditionally (ignoring the maximize-on-click toggle).
+    var onJumpMaximized: ((ReminderItem) -> Void)?
 
     static let showDelay: TimeInterval = 0.5
     static let hideGrace: TimeInterval = 0.2
@@ -50,10 +57,14 @@ final class DetailPanel {
         let frame = EdgeGeometry.detailFrame(anchoring: tabFrame, size: size, visible: visible)
         // A question popup hosts a text field; it must become key (and main) to
         // receive keyboard focus. Plain popups stay non-key (never steal focus).
+        // Re-applied on every show: the panel is reused, so a question shown
+        // after a plain reminder would otherwise inherit `allowsMain == false`
+        // and its answer field could never take keyboard input.
         let editable = item.kind == .question
         let panel = self.panel ?? PanelFactory.makePanel(frame: frame, canBecomeKey: true, editable: editable)
+        panel.allowsMain = editable
         self.panel = panel
-        panel.contentViewController = NSHostingController(rootView: DetailView(
+        let root = DetailView(
             item: item,
             usage: usage,
             onHoverChanged: { [weak self] inside in
@@ -71,8 +82,19 @@ final class DetailPanel {
             onChat: { [weak self] in
                 self?.dismiss()
                 self?.onChat?(item)
+            },
+            onJumpMaximized: { [weak self] in
+                self?.dismiss()
+                self?.onJumpMaximized?(item)
             }
-        ))
+        )
+        if let host {
+            host.rootView = root
+        } else {
+            let host = NSHostingController(rootView: root)
+            panel.contentViewController = host
+            self.host = host
+        }
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
         if editable { panel.makeKey() }
@@ -120,20 +142,20 @@ struct DetailView: View {
     var onClose: () -> Void = {}
     var onAnswer: (ItermSendTextAction.Answer, Int) -> Void = { _, _ in }
     var onChat: () -> Void = {}
+    /// Double-click on the header: always jump to the *maximized* pane, whatever
+    /// the maximize-on-click toggle says. Mirrors the toast's title row.
+    var onJumpMaximized: () -> Void = {}
 
     /// Interactive answer controls render only for a single-question
     /// AskUserQuestion; multi-question prompts fall back to the text body plus a
-    /// jump (the tty injection sequence is only verified for one question).
-    private var interactiveQuestion: NotifyPayload.Question? {
-        guard item.kind == .question, item.questions.count == 1 else { return nil }
-        return item.questions.first
-    }
+    /// jump. Shared with ToastView via `ReminderItem.interactiveQuestion`.
+    private var interactiveQuestion: NotifyPayload.Question? { item.interactiveQuestion }
 
-    /// Live `5h N% · 7d N%` from the current in-memory snapshot, or nil when
-    /// there is no data yet (the header then omits the badge). `@MainActor`
-    /// because `UsageService.snapshot` is main-actor-isolated; only ever read
-    /// from `body`, which is itself main-actor.
-    @MainActor private var usageBadge: String? { usage?.snapshot?.badgeText }
+    /// Live snapshot backing the usage meters, or nil when there is no data yet
+    /// (the header then omits them). `@MainActor` because `UsageService.snapshot`
+    /// is main-actor-isolated; only ever read from `body`, which is itself
+    /// main-actor.
+    @MainActor private var usageSnapshot: UsageSnapshot? { usage?.snapshot }
 
     /// Static "2 minutes ago" snapshot computed when the card opens — unlike
     /// SwiftUI's `.relative` style it does not tick like a countdown. Within
@@ -145,10 +167,13 @@ struct DetailView: View {
         if elapsed < 10 { return "just now" }
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .full
-        // Abbreviate only the seconds unit ("10 seconds ago" → "10 secs ago");
-        // other units keep their full spelling.
+        // Abbreviate the seconds and minutes units ("10 seconds ago" → "10 secs
+        // ago", "3 minutes ago" → "3 mins ago"); plural first so the singular
+        // replacement does not chop the "s". Other units keep their full spelling.
         return f.localizedString(for: date, relativeTo: Date())
             .replacingOccurrences(of: "seconds", with: "secs")
+            .replacingOccurrences(of: "minutes", with: "mins")
+            .replacingOccurrences(of: "minute", with: "min")
     }
 
     var body: some View {
@@ -174,9 +199,9 @@ struct DetailView: View {
                     .help("Close")
                     .accessibilityLabel("Close")
                 }
-                // Second row: branch on the left, usage badge right-aligned.
+                // Second row: branch on the left, usage meters right-aligned.
                 // Rendered whenever either is present.
-                if item.branchLabel != nil || usageBadge != nil {
+                if item.branchLabel != nil || usageSnapshot != nil {
                     HStack(spacing: 8) {
                         if let label = item.branchLabel {
                             Label(label, systemImage: item.isWorktree ? "folder" : "arrow.triangle.branch")
@@ -184,11 +209,8 @@ struct DetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 4)
-                        if let badge = usageBadge {
-                            Text(badge)
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                        if let snapshot = usageSnapshot {
+                            UsageBadgeView(snapshot: snapshot)
                                 .fixedSize()
                         }
                     }
@@ -198,6 +220,10 @@ struct DetailView: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(accent.opacity(0.15))
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2, perform: onJumpMaximized)
+            // A 2-count gesture is invisible to VoiceOver; expose it as an action.
+            .accessibilityAction(named: "Jump to maximized pane", onJumpMaximized)
 
             Divider()
 
@@ -215,7 +241,13 @@ struct DetailView: View {
 
     @ViewBuilder private var messageBody: some View {
         if let question = interactiveQuestion {
+            // `.id(sessionUUID)` is load-bearing: DetailPanel reuses one hosting
+            // controller across hovers, so without a per-item identity the
+            // answer controls keep their @State (typed text, ticked options) when
+            // the popup switches to a DIFFERENT session's question — Send would
+            // then inject one session's answer into another's TUI.
             let controls = QuestionAnswerView(question: question, onAnswer: onAnswer, onChat: onChat)
+                .id(item.sessionUUID)
             if scrolls {
                 ScrollView { controls }
             } else {
