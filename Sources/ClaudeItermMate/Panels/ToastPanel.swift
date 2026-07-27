@@ -330,25 +330,29 @@ struct ToastView: View {
                 .fill(ReminderPalette.color(at: item.colorIndex, level: item.lightenLevel))
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 4) {
+                // The minimize/close controls live INSIDE the title row rather than
+                // as a third column of this HStack. As a column they shortened the
+                // whole VStack, so an expanded message's `ScrollView` ended its
+                // scrollbar 48pt short of the card's right edge (their width plus
+                // the HStack spacing). In the title row they still reserve their
+                // room — the title truncates against them — while the body and its
+                // scrollbar now run the full width of the card.
                 ToastTitleRow(
                     title: Self.title(project: item.projectName, branch: item.branchLabel),
                     snapshot: usageSnapshot,
                     singleClickJumps: interactiveQuestion == nil,
                     onTap: onTap,
                     onJumpMaximized: onJumpMaximized
-                )
+                ) {
+                    if showsMinimize {
+                        iconButton("minus", label: "Minimize to tab", action: onMinimize)
+                    }
+                    iconButton("xmark", label: "Close", action: onClose)
+                }
                 messageBody
                 if showsExpandToggle {
                     expandToggle
                 }
-            }
-            // Top-right controls; laid out (not overlaid) so the text reserves
-            // room for them and never runs underneath.
-            HStack(spacing: 6) {
-                if showsMinimize {
-                    iconButton("minus", label: "Minimize to tab", action: onMinimize)
-                }
-                iconButton("xmark", label: "Close", action: onClose)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -389,18 +393,20 @@ struct ToastView: View {
     }
 }
 
-/// Project · branch plus the usage meters, and the row's own click handling:
-/// double-click always jumps to the maximized pane, single-click mirrors the
-/// card (the row's 2-count gesture would otherwise swallow it). Extracted from
-/// `ToastView` so each view body stays small enough to type-check quickly and
-/// diff independently.
-private struct ToastTitleRow: View {
+/// Project · branch, the usage meters and the card's minimize/close controls,
+/// plus the row's own click handling: double-click always jumps to the maximized
+/// pane, single-click mirrors the card (the row's 2-count gesture would otherwise
+/// swallow it). Extracted from `ToastView` so each view body stays small enough to
+/// type-check quickly and diff independently. `controls` is injected rather than
+/// built here so `iconButton` can stay on `ToastView` next to its sibling buttons.
+private struct ToastTitleRow<Controls: View>: View {
     let title: String
     let snapshot: UsageSnapshot?
     /// False for a question toast, whose card intentionally has no jump-on-click.
     let singleClickJumps: Bool
     let onTap: () -> Void
     let onJumpMaximized: () -> Void
+    @ViewBuilder let controls: () -> Controls
 
     var body: some View {
         HStack(spacing: 6) {
@@ -413,6 +419,7 @@ private struct ToastTitleRow: View {
                 UsageBadgeView(snapshot: snapshot, showsPercent: false)
                     .fixedSize()
             }
+            controls()
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onJumpMaximized)
