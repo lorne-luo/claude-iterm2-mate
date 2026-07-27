@@ -50,7 +50,7 @@ struct QuestionAnswerView: View {
                     }
                     .onSubmit { submitText() }
                 Button("Send") { submitText() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(freeText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -62,7 +62,7 @@ struct QuestionAnswerView: View {
                     .font(.system(size: 11))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.primary.opacity(0.7))
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -110,17 +110,25 @@ struct QuestionAnswerView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(option.label).font(.system(size: 12, weight: .medium))
                 if !option.description.isEmpty {
+                    // Not `.secondary`: on the toast's `.regularMaterial` the
+                    // hierarchical style is vibrancy-blended into the background
+                    // and the description became unreadable. An explicit dimmed
+                    // primary keeps the label/description hierarchy visible.
                     Text(option.description)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.primary.opacity(0.75))
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
+        // Same vibrancy problem as the description text: a `.secondary` fill all
+        // but disappears into the material. An explicit primary tint plus a
+        // hairline border keeps each option readable as a distinct control.
+        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.15), lineWidth: 1))
         .contentShape(Rectangle())
     }
 }
