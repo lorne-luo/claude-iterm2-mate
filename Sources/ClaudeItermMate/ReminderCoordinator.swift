@@ -302,11 +302,16 @@ final class ReminderCoordinator {
                 },
                 onAnswer: { [weak self] answer, count in
                     // Answered from the toast: tear down (cancel timer + fade +
-                    // drop the item) then run the injected side effect.
+                    // drop the item) then run the injected side effect. Gated on
+                    // still being the displayed toast: a second click during the
+                    // fade-out (or a click on the previous toast still fading
+                    // behind a newcomer) would otherwise inject the answer twice.
+                    guard self?.displayed?.token == token else { return }
                     self?.complete(token: token, session: session, findable: false)
                     self?.onAnswer?(item, answer, count)
                 },
                 onChat: { [weak self] in
+                    guard self?.displayed?.token == token else { return }
                     self?.complete(token: token, session: session, findable: false)
                     self?.onChat?(item)
                 },

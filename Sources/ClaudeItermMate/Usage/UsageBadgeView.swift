@@ -15,17 +15,22 @@ struct UsageBadgeView: View {
     static let barHeight: CGFloat = 3
 
     var body: some View {
-        HStack(spacing: 8) {
-            if let fiveHour = snapshot.fiveHour {
-                meter(fiveHour, label: "5h")
+        // `badgeText` is nil exactly when neither window has data (an Opus-only
+        // snapshot): render nothing rather than an empty track plus a focusable
+        // VoiceOver element with a blank label.
+        if let badgeText = snapshot.badgeText {
+            HStack(spacing: 8) {
+                if let fiveHour = snapshot.fiveHour {
+                    meter(fiveHour, label: "5h")
+                }
+                if let weekly = snapshot.weekly {
+                    meter(weekly, label: "7d")
+                }
             }
-            if let weekly = snapshot.weekly {
-                meter(weekly, label: "7d")
-            }
+            // One combined read ("5h 4% · 7d 66%") instead of four disjoint fragments.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(badgeText)
         }
-        // One combined read ("5h 4% · 7d 66%") instead of four disjoint fragments.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(snapshot.badgeText ?? "")
     }
 
     private func meter(_ window: UsageWindow, label: String) -> some View {

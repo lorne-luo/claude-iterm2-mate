@@ -43,8 +43,13 @@ final class ToastPanel: ToastPanelProtocol {
         // is NOT made key here — a passively-shown toast must not steal the
         // terminal's keyboard focus. It only becomes key when the user clicks the
         // free-text field (onEditingBegan below), so an interactive question can
-        // be typed into without the toast hijacking focus on appearance.
-        let panel = PanelFactory.makePanel(frame: frame, canBecomeKey: true)
+        // be typed into without the toast hijacking focus on appearance. A
+        // question toast must also be `editable` (main-eligible): the field
+        // editor behind the answer TextField needs main status, so key alone
+        // leaves it un-typable — the same fix DetailPanel needed.
+        let panel = PanelFactory.makePanel(
+            frame: frame, canBecomeKey: true, editable: item.kind == .question
+        )
         panel.contentView = FirstMouseHostingView(rootView: ToastView(
             item: item,
             usage: usage,
