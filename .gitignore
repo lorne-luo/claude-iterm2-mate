@@ -8,3 +8,4 @@ idea.md
 .claude/
 .worktree/
 dist/
+.trellis/
