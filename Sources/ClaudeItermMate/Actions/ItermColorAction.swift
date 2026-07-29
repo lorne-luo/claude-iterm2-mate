@@ -26,8 +26,8 @@ import os
 /// same reason) would otherwise park a thread on the shared utility queue
 /// forever. The sole caller already runs off the main thread (AppDelegate wires
 /// `onInjectColor` onto `DispatchQueue.global(qos: .utility)`), so no UI work is
-/// held up. Every failure — spawn error or timeout — is logged and otherwise
-/// ignored; the caller never learns the outcome.
+/// held up. Every failure — spawn error, timeout, or a non-zero exit status — is
+/// logged (distinctly) and otherwise ignored; the caller never learns the outcome.
 struct ItermColorAction {
     private static let log = Logger(subsystem: "io.lorne.claude-iterm2-mate", category: "ItermColor")
 
@@ -80,7 +80,11 @@ struct ItermColorAction {
 
     /// Spawn one send and wait for it, but never longer than `sendTimeout`:
     /// `terminationHandler` signals the semaphore, and a timeout kills the
-    /// process so it cannot linger either.
+    /// process so it cannot linger either. The three failure modes — spawn error,
+    /// timeout, non-zero exit — are logged distinctly (same as
+    /// `ItermSessionLookup` / `KeychainReader`) and are otherwise all treated the
+    /// same by the caller: `inject` still proceeds to the `/color` send after a
+    /// failed stash, because skipping it would silently lose the coloring.
     private func run(it2URL: URL, arguments: [String], what: String) {
         let p = ItermFocusAction.it2Process(it2URL: it2URL, arguments: arguments)
         let done = DispatchSemaphore(value: 0)
@@ -94,6 +98,10 @@ struct ItermColorAction {
         if done.wait(timeout: .now() + Self.sendTimeout) == .timedOut {
             Self.log.error("\(what) send timed out; terminating it2")
             p.terminate()
+            return
+        }
+        if p.terminationStatus != 0 {
+            Self.log.error("\(what) send exited \(p.terminationStatus)")
         }
     }
 }

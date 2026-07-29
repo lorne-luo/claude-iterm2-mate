@@ -94,14 +94,22 @@ final class PaneColoringTests: XCTestCase {
         return NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: json))!
     }
 
-    func testEachSessionExitResetsPaneBackground() {
+    func testEachSessionExitResetsPaneBackgroundAndRemovesTheReminder() {
         let coordinator = makeCoordinator()
         var reset: [String] = []
         coordinator.onResetPaneBackground = { reset.append($0) }
+        // AC6: the exit also drops the session's waiting/completed tab.
+        _ = coordinator.store.upsert(stop(session: "S", repo: "/r"))
+        _ = coordinator.store.upsert(stop(session: "T", repo: "/r"))
+        XCTAssertEqual(coordinator.store.items.count, 2)
 
-        coordinator.handle(resolve(session: "S", endReason: "exit"))
+        // `prompt_input_exit` is the only resetting reason (SessionEnd's enum is
+        // clear | logout | prompt_input_exit | other).
         coordinator.handle(resolve(session: "S", endReason: "prompt_input_exit"))
-        XCTAssertEqual(reset, ["S", "S"], "each genuine exit resets that session's pane")
+        coordinator.handle(resolve(session: "T", endReason: "prompt_input_exit"))
+        XCTAssertEqual(reset, ["S", "T"], "each genuine exit resets that session's pane")
+        XCTAssertEqual(coordinator.store.items.map(\.sessionUUID), [],
+                       "each exit removes that session's reminder")
     }
 
     func testNonExitResolveNeverResetsPaneBackground() {
@@ -125,8 +133,8 @@ final class PaneColoringTests: XCTestCase {
         coordinator.onResetPaneBackground = { _ in reset += 1 }
 
         coordinator.isPaneColoringEnabled = { false }
-        coordinator.handle(resolve(endReason: "exit"))
-        XCTAssertEqual(reset, 0, "never colored → nothing to reset")
+        coordinator.handle(resolve(endReason: "prompt_input_exit"))
+        XCTAssertEqual(reset, 0, "the toggle is a genuine off switch, reset included")
     }
 
     func testSessionStartAfterExitRecolorsTheSamePane() {
@@ -137,7 +145,7 @@ final class PaneColoringTests: XCTestCase {
 
         coordinator.handle(sessionStart(session: "S", repo: "/r", branch: "main"))
         XCTAssertEqual(applied.count, 1)
-        coordinator.handle(resolve(session: "S", endReason: "exit"))
+        coordinator.handle(resolve(session: "S", endReason: "prompt_input_exit"))
         // The exit must clear the hex memory, or `colorPaneIfNeeded`'s dedup would
         // leave the restarted session sitting at the default background.
         coordinator.handle(sessionStart(session: "S", repo: "/r", branch: "main"))
@@ -164,7 +172,7 @@ final class PaneColoringTests: XCTestCase {
 
         coordinator.handle(genuineStop(session: "S", repo: "/r"))
         XCTAssertEqual(injected.count, 1)
-        coordinator.handle(resolve(session: "S", endReason: "exit"))
+        coordinator.handle(resolve(session: "S", endReason: "prompt_input_exit"))
         // The exit must clear the inject-once flag too, or the restarted session's
         // pane would re-color while its prompt bar stayed default.
         coordinator.handle(sessionStart(session: "S", repo: "/r", branch: "main"))

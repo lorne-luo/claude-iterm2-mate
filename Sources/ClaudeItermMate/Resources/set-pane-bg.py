@@ -76,7 +76,8 @@ async def base_background_color(connection, session):
 async def main(connection):
     session_id = sys.argv[1]
     arg = sys.argv[2]
-    resetting = arg.lower() == "default"
+    # Exact match: the sentinel's other side is ItermBgColorAction.resetSentinel.
+    resetting = arg == "default"
     if not resetting:
         hexstr = arg.lstrip("#")
         r, g, b = (int(hexstr[i:i + 2], 16) for i in (0, 2, 4))

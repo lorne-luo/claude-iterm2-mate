@@ -152,10 +152,13 @@ final class ReminderCoordinator {
             // AskUserQuestion answered (PostToolUse), or the session ended
             // (SessionEnd): clear its waiting tab.
             store.remove(sessionUUID: p.sessionUUID)
-            // Claude Code actually exited (never on `/clear`, see `isSessionExit`):
-            // hand the pane back to the shell at its profile default. Gated on the
-            // coloring toggle for symmetry with the apply path — with it off we
-            // never colored, so there is nothing to reset.
+            // Claude Code actually exited (only `prompt_input_exit`, see
+            // `isSessionExit`): hand the pane back to the shell at its profile
+            // default. Gated on the coloring toggle so it is a genuine off switch —
+            // with it off this app touches no pane background at all, not even to
+            // undo one. Consequence, accepted: a pane colored *before* the toggle
+            // was switched off keeps its color (and its stale `coloredSessions`
+            // hex) until the pane itself closes and `reconcile` GCs the entry.
             if p.isSessionExit, isPaneColoringEnabled() {
                 // Load-bearing, not hygiene: `colorPaneIfNeeded` returns early when
                 // the stored hex equals the computed one, so leaving the entry

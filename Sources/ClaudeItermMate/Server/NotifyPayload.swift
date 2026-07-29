@@ -55,11 +55,11 @@ struct NotifyPayload: Codable, Equatable {
     // event without consulting the store. Optional: a hook script published
     // before this feature omits it, and the app must still decode.
     let promptID: String?
-    // SessionEnd's `reason` ("exit" | "clear" | "logout" | "prompt_input_exit" |
-    // "other"), forwarded verbatim on a `resolve` from `--event session-end`.
-    // Absent on an AskUserQuestion answer (that session is still alive) and on
-    // resolves from hook scripts published before this feature — the app owns
-    // the policy of which reasons reset the pane background (`isSessionExit`).
+    // SessionEnd's `reason` ("clear" | "logout" | "prompt_input_exit" | "other"),
+    // forwarded verbatim on a `resolve` from `--event session-end`. Absent on an
+    // AskUserQuestion answer (that session is still alive) and on resolves from
+    // hook scripts published before this feature — the app owns the policy of
+    // which reasons reset the pane background (`isSessionExit`).
     let endReason: String?
 
     enum CodingKeys: String, CodingKey {
@@ -113,13 +113,27 @@ struct NotifyPayload: Codable, Equatable {
     var isResolve: Bool { type == "resolve" }
 
     /// The Claude Code process actually went away, so its pane background can be
-    /// reset to the profile default. Only `exit` / `prompt_input_exit`: `clear`
-    /// keeps Claude alive and is immediately followed by a SessionStart (resetting
-    /// there would flicker and would depend on the arrival order of two
-    /// independent node processes), while `logout` / `other` are left colored on
-    /// purpose. Absent reason (ask-done, or a pre-feature hook) is never an exit.
+    /// reset to the profile default.
+    ///
+    /// SessionEnd's `reason` enum is exactly `clear` / `logout` /
+    /// `prompt_input_exit` / `other` — verified against the Claude Code 2.1.220
+    /// binary (`~/.local/share/claude/versions/2.1.220`, Mach-O arm64), whose only
+    /// SessionEnd-shaped reason literal is
+    /// `matcherMetadata:{fieldToMatch:"reason",values:["clear","logout","prompt_input_exit","other"]}`.
+    /// There is no `exit` reason: a genuine quit emits `prompt_input_exit`, so that
+    /// is the only value matched here.
+    ///
+    /// The other three deliberately do not reset: `clear` keeps Claude alive and is
+    /// immediately followed by a SessionStart (resetting there would flicker and
+    /// would depend on the arrival order of two independent node processes), while
+    /// `logout` and `other` leaving the pane colored is an accepted cost recorded in
+    /// the PRD. Absent reason (ask-done, or a pre-feature hook) is never an exit.
+    ///
+    /// `bypass_permissions_disabled` also exists in that binary (8 occurrences) but
+    /// is NOT part of the SessionEnd reason enum, so should such a session end ever
+    /// surface here it arrives as `other` and does not reset.
     var isSessionExit: Bool {
-        isResolve && (endReason == "exit" || endReason == "prompt_input_exit")
+        isResolve && endReason == "prompt_input_exit"
     }
 
     /// Parsed status; absent / unknown -> `.completed` (backward compatible).

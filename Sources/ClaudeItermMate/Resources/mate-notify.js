@@ -359,6 +359,18 @@ function buildResolveFields(cwd, sessionUUID, endReason) {
   return fields;
 }
 
+// Which of the two `resolve` events forwards SessionEnd's `reason`. Kept as data
+// (rather than a literal at each call site) so the wiring itself is unit-testable
+// — a handler cannot be called from a test, it opens the socket.
+const FORWARDS_END_REASON = { "ask-done": false, "session-end": true };
+
+// The `reason` to put on the wire: only the session-end event has one to report;
+// an ask-done leaves the field off entirely (that session is still alive). Pure
+// so this wiring is testable independently of the socket.
+function endReasonToForward(input, forwardEndReason) {
+  return forwardEndReason ? input.reason : undefined;
+}
+
 // Shared body of the two `resolve` events (ask-done and session-end): same
 // guards (darwin, not SDK, focusable), same payload, differing only in whether
 // the SessionEnd reason is forwarded.
@@ -375,7 +387,7 @@ function sendResolve(raw, forwardEndReason) {
   const { focusable, sessionUUID } = deriveSession(input, cwd);
   if (!focusable) return;
   sendPayload(
-    buildResolveFields(cwd, sessionUUID, forwardEndReason ? input.reason : undefined),
+    buildResolveFields(cwd, sessionUUID, endReasonToForward(input, forwardEndReason)),
     null
   );
 }
@@ -384,15 +396,17 @@ function sendResolve(raw, forwardEndReason) {
 // remove the waiting tab for this session (event-driven clear). No `end_reason`:
 // the session lives on, so the pane must keep its project color.
 function handleAskDone(raw) {
-  sendResolve(raw, false);
+  sendResolve(raw, FORWARDS_END_REASON["ask-done"]);
 }
 
 // --event session-end: the Claude Code session ended (SessionEnd). Clear its
-// reminder tab and forward `reason` (exit | clear | logout | prompt_input_exit |
-// other) so the app can reset the pane background for a real exit only — a
-// `/clear` keeps Claude alive and is immediately followed by a SessionStart.
+// reminder tab and forward `reason` (clear | logout | prompt_input_exit | other —
+// the enum verified in the Claude Code 2.1.220 binary; a genuine quit is
+// `prompt_input_exit`) so the app can reset the pane background for a real exit
+// only — a `/clear` keeps Claude alive and is immediately followed by a
+// SessionStart.
 function handleSessionEnd(raw) {
-  sendResolve(raw, true);
+  sendResolve(raw, FORWARDS_END_REASON["session-end"]);
 }
 
 // Dispatch by CLI mode from `--event <mode>`: `notification` | `ask` |
@@ -430,6 +444,8 @@ if (require.main === module) {
     eventMode,
     buildQuestionFields,
     buildResolveFields,
+    endReasonToForward,
+    FORWARDS_END_REASON,
     extractSummary,
   };
 }

@@ -144,12 +144,12 @@ final class NotifyPayloadTests: XCTestCase {
         return NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: dict))
     }
 
-    func testExitReasonsDecodeAsSessionExit() {
-        for reason in ["exit", "prompt_input_exit"] {
-            let p = resolve(["end_reason": reason])
-            XCTAssertEqual(p?.endReason, reason)
-            XCTAssertEqual(p?.isSessionExit, true)
-        }
+    func testExitReasonDecodesAsSessionExit() {
+        // `prompt_input_exit` is what a genuine quit emits — the only resetting
+        // value of SessionEnd's four-value reason enum.
+        let p = resolve(["end_reason": "prompt_input_exit"])
+        XCTAssertEqual(p?.endReason, "prompt_input_exit")
+        XCTAssertEqual(p?.isSessionExit, true)
     }
 
     func testNonExitReasonsAreNotSessionExit() {
@@ -168,7 +168,10 @@ final class NotifyPayloadTests: XCTestCase {
     }
 
     func testEndReasonOnANonResolveIsNotSessionExit() {
-        XCTAssertEqual(NotifyPayload.decode(json(["end_reason": "exit"]))?.isSessionExit, false)
+        XCTAssertEqual(
+            NotifyPayload.decode(json(["end_reason": "prompt_input_exit"]))?.isSessionExit,
+            false
+        )
     }
 
     func testQuestionsAbsentByDefault() {
