@@ -347,9 +347,22 @@ function handleAsk(raw) {
   sendPayload(buildQuestionFields(input, cwd, focusable, sessionUUID), null);
 }
 
-// --event ask-done: AskUserQuestion answered (PostToolUse). Tell the app to
-// remove the waiting tab for this session (event-driven clear).
-function handleAskDone(raw) {
+// Build the `resolve` wire fields: tell the app to drop this session's tab.
+// Pure so it is unit-testable. `endReason` is SessionEnd's `reason` forwarded
+// verbatim (omitted when absent or not a string, and always omitted for an
+// AskUserQuestion answer — that session is still alive). The app owns the policy
+// of which reasons reset the pane background, so it can change without
+// republishing this script.
+function buildResolveFields(cwd, sessionUUID, endReason) {
+  const fields = { type: "resolve", session_uuid: sessionUUID, cwd, timestamp: Date.now() };
+  if (typeof endReason === "string" && endReason) fields.end_reason = endReason;
+  return fields;
+}
+
+// Shared body of the two `resolve` events (ask-done and session-end): same
+// guards (darwin, not SDK, focusable), same payload, differing only in whether
+// the SessionEnd reason is forwarded.
+function sendResolve(raw, forwardEndReason) {
   let input = {};
   try {
     input = raw.trim() ? JSON.parse(raw) : {};
@@ -361,15 +374,25 @@ function handleAskDone(raw) {
   const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd();
   const { focusable, sessionUUID } = deriveSession(input, cwd);
   if (!focusable) return;
-  sendPayload({ type: "resolve", session_uuid: sessionUUID, cwd, timestamp: Date.now() }, null);
+  sendPayload(
+    buildResolveFields(cwd, sessionUUID, forwardEndReason ? input.reason : undefined),
+    null
+  );
 }
 
-// --event session-end: the Claude Code session ended (SessionEnd, any reason).
-// Clear its reminder tab. Identical to ask-done — same `resolve` payload and
-// same guards (darwin, not SDK, focusable). Deliberately does NOT touch the
-// app's color/inject-once memory: the iTerm2 pane may still be alive and reused.
+// --event ask-done: AskUserQuestion answered (PostToolUse). Tell the app to
+// remove the waiting tab for this session (event-driven clear). No `end_reason`:
+// the session lives on, so the pane must keep its project color.
+function handleAskDone(raw) {
+  sendResolve(raw, false);
+}
+
+// --event session-end: the Claude Code session ended (SessionEnd). Clear its
+// reminder tab and forward `reason` (exit | clear | logout | prompt_input_exit |
+// other) so the app can reset the pane background for a real exit only — a
+// `/clear` keeps Claude alive and is immediately followed by a SessionStart.
 function handleSessionEnd(raw) {
-  handleAskDone(raw);
+  sendResolve(raw, true);
 }
 
 // Dispatch by CLI mode from `--event <mode>`: `notification` | `ask` |
@@ -406,6 +429,7 @@ if (require.main === module) {
     shouldSendNotification,
     eventMode,
     buildQuestionFields,
+    buildResolveFields,
     extractSummary,
   };
 }

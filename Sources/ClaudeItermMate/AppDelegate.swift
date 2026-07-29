@@ -33,6 +33,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 bgColorAction.apply(sessionUUID: sessionUUID, hex: hex)
             }
         }
+        coordinator.onResetPaneBackground = { sessionUUID in
+            // Claude Code exited; hand the pane back to its profile default.
+            // Same off-main fire-and-forget shape as the apply path.
+            DispatchQueue.global(qos: .utility).async {
+                bgColorAction.reset(sessionUUID: sessionUUID)
+            }
+        }
         let colorAction = self.colorAction
         coordinator.onInjectColor = { sessionUUID, name in
             // Fire-and-forget off the main thread. Only reached on a genuine Stop

@@ -7,8 +7,13 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { classifyStopStatus, shouldSendNotification, eventMode, buildQuestionFields } =
-  require("../../Sources/ClaudeItermMate/Resources/mate-notify.js");
+const {
+  classifyStopStatus,
+  shouldSendNotification,
+  eventMode,
+  buildQuestionFields,
+  buildResolveFields,
+} = require("../../Sources/ClaudeItermMate/Resources/mate-notify.js");
 
 test("classifyStopStatus: trailing question mark -> waiting", () => {
   assert.strictEqual(classifyStopStatus("Should I proceed?"), "waiting");
@@ -125,6 +130,24 @@ test("baseFields (via buildQuestionFields): forwards prompt_id when present", ()
   // recognise and drop it without consulting its store.
   const f = buildQuestionFields({ prompt_id: "afb14fa8" }, "/x/proj", true, "S1");
   assert.strictEqual(f.prompt_id, "afb14fa8");
+});
+
+test("buildResolveFields: forwards SessionEnd's reason verbatim", () => {
+  // The app decides which reasons reset the pane background; the hook only reports.
+  for (const reason of ["exit", "prompt_input_exit", "clear", "logout", "other"]) {
+    const f = buildResolveFields("/x/proj", "S1", reason);
+    assert.strictEqual(f.type, "resolve");
+    assert.strictEqual(f.session_uuid, "S1");
+    assert.strictEqual(f.cwd, "/x/proj");
+    assert.strictEqual(f.end_reason, reason);
+  }
+});
+
+test("buildResolveFields: omits end_reason for ask-done and for a non-string reason", () => {
+  // ask-done passes undefined: that session is still alive, never reset.
+  assert.ok(!("end_reason" in buildResolveFields("/x/proj", "S1", undefined)));
+  assert.ok(!("end_reason" in buildResolveFields("/x/proj", "S1", "")));
+  assert.ok(!("end_reason" in buildResolveFields("/x/proj", "S1", 42)));
 });
 
 test("baseFields (via buildQuestionFields): omits prompt_id when absent or not a string", () => {

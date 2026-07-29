@@ -9,6 +9,13 @@ final class ItermBgColorActionTests: XCTestCase {
         )
     }
 
+    func testResetArgumentsUseTheSentinelInPlaceOfAHex() {
+        XCTAssertEqual(
+            ItermBgColorAction.resetArguments(sessionUUID: "ABC-123"),
+            ["ABC-123", "default"]
+        )
+    }
+
     func testAvailabilityFollowsScriptExecutability() {
         XCTAssertFalse(
             ItermBgColorAction(scriptURL: URL(fileURLWithPath: "/no/such/set-pane-bg.py")).available

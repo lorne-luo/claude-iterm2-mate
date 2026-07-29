@@ -133,6 +133,44 @@ final class NotifyPayloadTests: XCTestCase {
         XCTAssertEqual(p?.fullMessage, "")
     }
 
+    private func resolve(_ overrides: [String: Any] = [:]) -> NotifyPayload? {
+        var dict: [String: Any] = [
+            "type": "resolve",
+            "session_uuid": "ABC-123",
+            "cwd": "/Users/me/Workspace/myproj",
+            "timestamp": 1234567890123.0,
+        ]
+        for (k, v) in overrides { dict[k] = v }
+        return NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: dict))
+    }
+
+    func testExitReasonsDecodeAsSessionExit() {
+        for reason in ["exit", "prompt_input_exit"] {
+            let p = resolve(["end_reason": reason])
+            XCTAssertEqual(p?.endReason, reason)
+            XCTAssertEqual(p?.isSessionExit, true)
+        }
+    }
+
+    func testNonExitReasonsAreNotSessionExit() {
+        // `clear` keeps Claude alive; `logout`/`other` deliberately stay colored.
+        for reason in ["clear", "logout", "other"] {
+            XCTAssertEqual(resolve(["end_reason": reason])?.isSessionExit, false)
+        }
+    }
+
+    func testResolveWithoutEndReasonIsNotSessionExit() {
+        // The `--event ask-done` payload, and any resolve from a pre-feature hook.
+        let p = resolve()
+        XCTAssertEqual(p?.isResolve, true)
+        XCTAssertNil(p?.endReason)
+        XCTAssertEqual(p?.isSessionExit, false)
+    }
+
+    func testEndReasonOnANonResolveIsNotSessionExit() {
+        XCTAssertEqual(NotifyPayload.decode(json(["end_reason": "exit"]))?.isSessionExit, false)
+    }
+
     func testQuestionsAbsentByDefault() {
         XCTAssertNil(NotifyPayload.decode(json())?.questions)
         XCTAssertEqual(NotifyPayload.decode(json())?.isQuestion, false)
