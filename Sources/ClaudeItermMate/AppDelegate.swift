@@ -103,6 +103,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 catch { NSLog("Hook refresh on launch failed: \(error)") }
             }
         }
+
+        // The iTerm2 Python API scripts back pane coloring and click-to-jump,
+        // which are independent of the hook opt-in — publish them
+        // unconditionally. Idempotent, off-main, failure is non-fatal.
+        DispatchQueue.global(qos: .utility).async {
+            do { try ScriptInstaller().install() }
+            catch { NSLog("Script publish on launch failed: \(error)") }
+        }
     }
 
     static func configureReminderSettings(

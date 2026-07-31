@@ -39,9 +39,13 @@ click to return to — so nothing sits idle waiting for you.
 - macOS 14+ on Apple Silicon (the released `.dmg` ships an arm64-only binary)
 - iTerm2 with the Python API enabled
 - Node.js (runs the Claude Code `Stop` hook)
-- For click-to-focus: [it2](https://pypi.org/project/it2/)
-  (`uv tool install it2`). *Maximize Pane on Click* additionally uses the
-  machine-local `~/.claude/scripts/iterm-focus-pane.py` (focus + maximize).
+- For click-to-focus and pane coloring: [it2](https://pypi.org/project/it2/)
+  (`uv tool install it2`). Beyond the CLI itself, its virtualenv provides the
+  Python that has the `iterm2` package — the app runs its own bundled
+  `iterm-focus-pane.py` (focus + maximize) and `set-pane-bg.py` (pane
+  background) through that interpreter. Both scripts are published to
+  `~/Library/Application Support/ClaudeItermMate/` on launch; nothing to install
+  by hand.
 
 ## Build & run
 
@@ -109,9 +113,9 @@ confirmation prompt).
 | Launch at Login | Toggle (requires a bundled `.app`) |
 | Quit | Exit the app |
 
-A warning row appears when either `it2` / `iterm-focus-pane.py` was not found
-(tabs still work but clicking won't jump — `uv tool install it2` to fix) or the
-socket server failed to start (the reason is shown inline).
+A warning row appears when `it2` was not found (tabs still work but clicking
+won't jump — `uv tool install it2` to fix) or the socket server failed to start
+(the reason is shown inline).
 
 ## How it works
 
