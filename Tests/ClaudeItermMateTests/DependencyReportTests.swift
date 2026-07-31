@@ -1,0 +1,92 @@
+import XCTest
+@testable import ClaudeItermMate
+
+final class DependencyReportTests: XCTestCase {
+    /// Everything present and an event already delivered → nothing to report.
+    func testAllSatisfied() {
+        let report = DependencyReport.evaluate(
+            itermInstalled: true, it2Found: true, hookInstalled: true, hasReceivedEvent: true
+        )
+        XCTAssertEqual(report.missing, [])
+        XCTAssertFalse(report.hasAnyMissing)
+    }
+
+    func testItermMissing() {
+        let report = DependencyReport.evaluate(
+            itermInstalled: false, it2Found: true, hookInstalled: true, hasReceivedEvent: true
+        )
+        XCTAssertEqual(report.missing, [.iterm2])
+        XCTAssertTrue(report.hasAnyMissing)
+    }
+
+    func testIt2Missing() {
+        let report = DependencyReport.evaluate(
+            itermInstalled: true, it2Found: false, hookInstalled: true, hasReceivedEvent: true
+        )
+        XCTAssertEqual(report.missing, [.it2])
+    }
+
+    func testBothMissing() {
+        let report = DependencyReport.evaluate(
+            itermInstalled: false, it2Found: false, hookInstalled: true, hasReceivedEvent: true
+        )
+        XCTAssertEqual(report.missing, [.iterm2, .it2])
+    }
+
+    /// Hook not installed is "not started yet", not "broken" — never report
+    /// delivery, even though no event has ever arrived.
+    func testDeliveryNotReportedWhenHookNotInstalled() {
+        let report = DependencyReport.evaluate(
+            itermInstalled: true, it2Found: true, hookInstalled: false, hasReceivedEvent: false
+        )
+        XCTAssertFalse(report.missing.contains(.delivery))
+        XCTAssertEqual(report.missing, [])
+    }
+
+    func testDeliveryReportedWhenHookInstalledButNothingReceived() {
+        let report = DependencyReport.evaluate(
+            itermInstalled: true, it2Found: true, hookInstalled: true, hasReceivedEvent: false
+        )
+        XCTAssertEqual(report.missing, [.delivery])
+    }
+
+    func testDeliveryClearedOnceAnEventArrived() {
+        let report = DependencyReport.evaluate(
+            itermInstalled: true, it2Found: true, hookInstalled: true, hasReceivedEvent: true
+        )
+        XCTAssertFalse(report.missing.contains(.delivery))
+    }
+
+    func testAllThreeMissing() {
+        let report = DependencyReport.evaluate(
+            itermInstalled: false, it2Found: false, hookInstalled: true, hasReceivedEvent: false
+        )
+        XCTAssertEqual(report.missing, [.iterm2, .it2, .delivery])
+    }
+
+    /// A2: the it2 row must carry the exact fix command and name all four
+    /// features it takes down.
+    func testIt2CopyCarriesInstallCommandAndAllFourFeatures() {
+        let title = DependencyReport.Dependency.it2.menuTitle
+        XCTAssertTrue(title.contains("uv tool install it2"), title)
+        XCTAssertTrue(DependencyReport.Dependency.it2.toastLine.contains("uv tool install it2"))
+        for feature in ["jump", "pane color", "/color", "question answers"] {
+            XCTAssertTrue(title.contains(feature), "missing \(feature) in: \(title)")
+        }
+    }
+
+    /// A2: the iTerm2 row must point at where to get it.
+    func testItermCopyCarriesDownloadGuidance() {
+        let title = DependencyReport.Dependency.iterm2.menuTitle
+        XCTAssertTrue(title.contains("iTerm2"), title)
+        XCTAssertTrue(title.contains("iterm2.com"), title)
+        XCTAssertTrue(DependencyReport.Dependency.iterm2.toastLine.contains("iterm2.com"))
+    }
+
+    /// The delivery row must tell the user what to actually do about it.
+    func testDeliveryCopyMentionsNodeAndRestart() {
+        let title = DependencyReport.Dependency.delivery.menuTitle
+        XCTAssertTrue(title.contains("node"), title)
+        XCTAssertFalse(DependencyReport.Dependency.delivery.toastLine.isEmpty)
+    }
+}

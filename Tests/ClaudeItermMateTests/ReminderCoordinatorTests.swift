@@ -346,6 +346,31 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.store.items.isEmpty, "resolve must remove the tab")
     }
 
+    /// The delivery latch must fire for EVERY payload, including the two that
+    /// return early: `session_start` is normally the very first message to
+    /// arrive, so a call placed after that branch would never latch and the menu
+    /// would keep claiming "no events received".
+    func testDidReceiveEventFiresBeforeEarlyReturns() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        var received = 0
+        coordinator.onDidReceiveEvent = { received += 1 }
+
+        coordinator.handle(decode([
+            "session_uuid": "S1", "cwd": "/tmp/proj", "timestamp": 1.0, "type": "session_start",
+        ]))
+        XCTAssertEqual(received, 1, "session_start must latch — it is usually the first payload")
+
+        coordinator.handle(decode([
+            "session_uuid": "S1", "cwd": "/tmp/proj", "timestamp": 2.0, "type": "resolve",
+        ]))
+        XCTAssertEqual(received, 2, "resolve must latch too")
+
+        coordinator.handle(payload())
+        XCTAssertEqual(received, 3)
+        try await settle()
+    }
+
     func testQuestionNotOverwrittenByGenericPermissionWaiting() async throws {
         let toast = SpyToast()
         let coordinator = coordinator(toast, duration: 0.2)

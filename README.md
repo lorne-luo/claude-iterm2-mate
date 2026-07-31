@@ -113,9 +113,16 @@ confirmation prompt).
 | Launch at Login | Toggle (requires a bundled `.app`) |
 | Quit | Exit the app |
 
-A warning row appears when `it2` was not found (tabs still work but clicking
-won't jump — `uv tool install it2` to fix) or the socket server failed to start
-(the reason is shown inline).
+One disabled warning row appears per unmet prerequisite, each carrying its own
+fix: iTerm2 not installed (reminders fall back to desktop notifications), `it2`
+not found (`uv tool install it2` — without it there is no jump, pane color,
+`/color`, or question answering), and "hook installed but no events received yet"
+(usually `node` missing from Claude Code's `PATH`). The same list is summarised in
+a toast at launch whenever something is missing. A socket-server failure gets its
+own row with the reason inline.
+
+The rows are re-evaluated every time the menu opens, so installing a missing
+prerequisite clears the warning without restarting the app.
 
 ## How it works
 

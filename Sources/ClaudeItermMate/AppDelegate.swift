@@ -42,7 +42,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 colorAction.inject(sessionUUID: sessionUUID, colorName: name)
             }
         }
-        menuBar = MenuBarController(focusAvailable: focusAction.canFocus)
+        // Any payload arriving proves the hook → socket path works end to end.
+        // Guarded: this fires on EVERY payload, and a permission storm would
+        // otherwise rewrite the same `true` dozens of times. It is a one-way latch.
+        coordinator.onDidReceiveEvent = {
+            if !AppSettings.hasReceivedEvent { AppSettings.hasReceivedEvent = true }
+        }
+        // Evaluated per menu open / icon refresh, so installing a missing
+        // dependency clears the warning without restarting the app.
+        menuBar = MenuBarController(report: { DependencyReport.current() })
         tabStrip = TabStripPanel(
             store: store,
             onClick: { [weak self] item in self?.activate(item) },
@@ -111,6 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do { try ScriptInstaller().install() }
             catch { NSLog("Script publish on launch failed: \(error)") }
         }
+
+        // Say what is missing instead of looking healthy while doing nothing.
+        // No-op when every dependency is satisfied.
+        menuBar?.showDependencyToastIfNeeded()
     }
 
     static func configureReminderSettings(
