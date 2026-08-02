@@ -174,7 +174,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     private func startPolling() {
         guard poll == nil else { return }
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.reload() }
+            // The timer is on RunLoop.main, so this already runs on the main
+            // thread — state the fact instead of hopping through a `Task`, which
+            // would only defer the reload by a runloop turn. It also keeps the
+            // body non-concurrent: Swift 5.10 (what CI builds with) rejects
+            // referencing a weakly-captured `self` from inside a `Task`.
+            MainActor.assumeIsolated { self?.reload() }
         }
         // .common, so the poll survives menu tracking and window drags.
         RunLoop.main.add(timer, forMode: .common)
