@@ -53,13 +53,13 @@ struct DependencyReport {
     /// not installed — that is "not opted in yet", not "broken".
     static func evaluate(
         itermInstalled: Bool,
-        it2Found: Bool,
+        it2Usable: Bool,
         hookInstalled: Bool,
         hasReceivedEvent: Bool
     ) -> DependencyReport {
         var missing: [Dependency] = []
         if !itermInstalled { missing.append(.iterm2) }
-        if !it2Found { missing.append(.it2) }
+        if !it2Usable { missing.append(.it2) }
         if hookInstalled && !hasReceivedEvent { missing.append(.delivery) }
         return DependencyReport(missing: missing)
     }
@@ -68,10 +68,17 @@ struct DependencyReport {
     /// no subprocess — `ItermSessionLookup` cannot, since its `is running` guard
     /// yields an empty Set for both "not installed" and "no panes open".
     static func current() -> DependencyReport {
-        evaluate(
+        // `it2` counts as usable only when its interpreter also resolves. The
+        // binary alone is a proxy, not a capability: an `it2` whose launcher is
+        // not a shebang-python script leaves pane coloring and maximize-on-click
+        // silently dead while the menu claims everything is fine — exactly the
+        // failure this type exists to prevent. `uv tool install it2` is still the
+        // right advice, since reinstalling repairs a broken venv too.
+        let it2URL = ItermFocusAction.resolveIt2()
+        return evaluate(
             itermInstalled: NSWorkspace.shared
                 .urlForApplication(withBundleIdentifier: itermBundleID) != nil,
-            it2Found: ItermFocusAction.resolveIt2() != nil,
+            it2Usable: it2URL != nil && PythonInterpreter.resolve(it2URL: it2URL) != nil,
             hookInstalled: HookStatus.current() == .installed,
             hasReceivedEvent: AppSettings.hasReceivedEvent
         )
