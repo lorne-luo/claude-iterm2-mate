@@ -39,6 +39,19 @@ enum AppSettings {
         set { UserDefaults.standard.set(newValue, forKey: playSoundKey) }
     }
 
+    private static let suppressSetupAtLaunchKey = "suppressSetupAtLaunch"
+
+    /// Escape hatch for the Setup checklist window, ticked from inside it.
+    /// Default false.
+    ///
+    /// It suppresses the *launch popup only*: the menu-bar warning triangle and
+    /// the disabled warning rows stay exactly as they were, and Setup… still
+    /// opens the window. "Stop interrupting me" is not "stop telling me".
+    static var suppressSetupAtLaunch: Bool {
+        get { UserDefaults.standard.bool(forKey: suppressSetupAtLaunchKey) }
+        set { UserDefaults.standard.set(newValue, forKey: suppressSetupAtLaunchKey) }
+    }
+
     private static let hasReceivedEventKey = "hasReceivedHookEvent"
 
     /// One-way latch: true once ANY hook payload has ever reached the app.
