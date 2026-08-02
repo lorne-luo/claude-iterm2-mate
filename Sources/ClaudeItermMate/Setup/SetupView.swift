@@ -10,6 +10,7 @@ struct SetupView: View {
     let suppressAtLaunch: Bool
     let onFix: (SetupRow) -> Void
     let onRecheck: () -> Void
+    let onClose: () -> Void
     let onSuppressChanged: (Bool) -> Void
 
     var body: some View {
@@ -48,6 +49,12 @@ struct SetupView: View {
                 .help("Stops the window from opening by itself. The menu-bar warnings stay.")
                 Spacer()
                 Button("Recheck", action: onRecheck)
+                // The title bar already has a close button, but the launch path
+                // orders the window in without activating — so the eye is on the
+                // checklist, not the chrome. A footer button next to Recheck is
+                // where "I'm done here" is actually looked for.
+                Button("Close", action: onClose)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)

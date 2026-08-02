@@ -123,6 +123,10 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             suppressAtLaunch: AppSettings.suppressSetupAtLaunch,
             onFix: { [weak self] row in self?.perform(row) },
             onRecheck: { [weak self] in self?.reload() },
+            // performClose, not close: it goes through the delegate, so the poll
+            // is torn down in `windowWillClose` exactly as it is for the title
+            // bar's own close button.
+            onClose: { [weak self] in self?.window?.performClose(nil) },
             onSuppressChanged: { [weak self] suppress in
                 AppSettings.suppressSetupAtLaunch = suppress
                 self?.reload()
