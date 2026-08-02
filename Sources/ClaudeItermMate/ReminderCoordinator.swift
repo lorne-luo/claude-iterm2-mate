@@ -40,6 +40,13 @@ final class ReminderCoordinator {
     /// is called.
     var onSetPaneBackground: ((_ sessionUUID: String, _ hex: String) -> Void)?
 
+    /// Invoked to restore a session's iTerm2 pane background to its profile
+    /// default when the Claude Code process exited (the pane itself lives on, as
+    /// a plain shell). AppDelegate wires this to `ItermBgColorAction.reset`
+    /// (off-main, fire-and-forget); tests observe it. Gating lives in the
+    /// `isResolve` branch of `handle`.
+    var onResetPaneBackground: ((_ sessionUUID: String) -> Void)?
+
     /// Invoked to inject `/color <name>` into a session's iTerm2 prompt bar.
     /// AppDelegate wires this to `ItermColorAction` (off-main, fire-and-forget);
     /// tests observe it. Gating/dedup happen in `injectColorIfNeeded` first.
@@ -151,8 +158,32 @@ final class ReminderCoordinator {
             return
         }
         if p.isResolve {
-            // AskUserQuestion answered (PostToolUse): clear its waiting tab.
+            // AskUserQuestion answered (PostToolUse), or the session ended
+            // (SessionEnd): clear its waiting tab.
             store.remove(sessionUUID: p.sessionUUID)
+            // Claude Code actually exited (only `prompt_input_exit`, see
+            // `isSessionExit`): hand the pane back to the shell at its profile
+            // default. Gated on the coloring toggle so it is a genuine off switch —
+            // with it off this app touches no pane background at all, not even to
+            // undo one. Consequence, accepted: a pane colored *before* the toggle
+            // was switched off keeps its color (and its stale `coloredSessions`
+            // hex) until the pane itself closes and `reconcile` GCs the entry.
+            if p.isSessionExit, isPaneColoringEnabled() {
+                // Load-bearing, not hygiene: `colorPaneIfNeeded` returns early when
+                // the stored hex equals the computed one, so leaving the entry
+                // behind would keep a restarted Claude in this same pane at the
+                // default background forever.
+                //
+                // BOTH memories must be cleared together: they are the two halves of
+                // one visual contract (pane background + prompt bar must agree). Both
+                // are keyed by iTerm2 session UUID, which outlives the Claude process
+                // — a restart in this same still-open pane reuses it. Clearing only
+                // the hex would re-color the pane while `injectColorIfNeeded` still
+                // considers the session injected, leaving the prompt bar default.
+                coloredSessions[p.sessionUUID] = nil
+                colorInjectedSessions.remove(p.sessionUUID)
+                onResetPaneBackground?(p.sessionUUID)
+            }
             return
         }
         usage?.refreshIfStale()

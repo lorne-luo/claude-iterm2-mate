@@ -13,9 +13,8 @@ override so only that pane's background changes; it does NOT touch the tty, so a
 running Claude TUI is unaffected. All failures exit silently — the caller
 ignores this script's outcome.
 
-With "default" in place of the hex it restores the pane to its underlying
-profile background instead. Nothing in the app sends "default" today — the
-branch is kept for a future session-exit reset. iTerm2 2.20 has no call to
+With "default" in place of the hex (sent when Claude Code exits) it restores the
+pane to its underlying profile background instead. iTerm2 2.20 has no call to
 drop a per-session override, and async_get_profile() returns the MERGED value —
 so the real base value is read via Profile.original_guid (the shared profile this
 session was derived from; None when it was never overridden) and re-applied

@@ -86,6 +86,102 @@ final class PaneColoringTests: XCTestCase {
         XCTAssertEqual(applied, 0, "non-iTerm2 session has no pane to color")
     }
 
+    private func resolve(session: String = "CC-1", endReason: String? = nil) -> NotifyPayload {
+        var json: [String: Any] = [
+            "type": "resolve", "session_uuid": session, "cwd": "/tmp/proj", "timestamp": 1.0,
+        ]
+        if let endReason { json["end_reason"] = endReason }
+        return NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: json))!
+    }
+
+    func testEachSessionExitResetsPaneBackgroundAndRemovesTheReminder() {
+        let coordinator = makeCoordinator()
+        var reset: [String] = []
+        coordinator.onResetPaneBackground = { reset.append($0) }
+        // AC6: the exit also drops the session's waiting/completed tab.
+        _ = coordinator.store.upsert(stop(session: "S", repo: "/r"))
+        _ = coordinator.store.upsert(stop(session: "T", repo: "/r"))
+        XCTAssertEqual(coordinator.store.items.count, 2)
+
+        // `prompt_input_exit` is the only resetting reason (SessionEnd's enum is
+        // clear | logout | prompt_input_exit | other).
+        coordinator.handle(resolve(session: "S", endReason: "prompt_input_exit"))
+        coordinator.handle(resolve(session: "T", endReason: "prompt_input_exit"))
+        XCTAssertEqual(reset, ["S", "T"], "each genuine exit resets that session's pane")
+        XCTAssertEqual(coordinator.store.items.map(\.sessionUUID), [],
+                       "each exit removes that session's reminder")
+    }
+
+    func testNonExitResolveNeverResetsPaneBackground() {
+        let coordinator = makeCoordinator()
+        var reset = 0
+        coordinator.onResetPaneBackground = { _ in reset += 1 }
+
+        // `/clear` keeps Claude alive (and is followed by a SessionStart);
+        // logout/other stay colored on purpose; an absent reason is an
+        // AskUserQuestion answer or a pre-feature hook.
+        coordinator.handle(resolve(endReason: "clear"))
+        coordinator.handle(resolve(endReason: "logout"))
+        coordinator.handle(resolve(endReason: "other"))
+        coordinator.handle(resolve())
+        XCTAssertEqual(reset, 0)
+    }
+
+    func testDisabledColoringNeverResetsPaneBackground() {
+        let coordinator = makeCoordinator()
+        var reset = 0
+        coordinator.onResetPaneBackground = { _ in reset += 1 }
+
+        coordinator.isPaneColoringEnabled = { false }
+        coordinator.handle(resolve(endReason: "prompt_input_exit"))
+        XCTAssertEqual(reset, 0, "the toggle is a genuine off switch, reset included")
+    }
+
+    func testSessionStartAfterExitRecolorsTheSamePane() {
+        let coordinator = makeCoordinator()
+        var applied: [(String, String)] = []
+        coordinator.onSetPaneBackground = { applied.append(($0, $1)) }
+        coordinator.onResetPaneBackground = { _ in }
+
+        coordinator.handle(sessionStart(session: "S", repo: "/r", branch: "main"))
+        XCTAssertEqual(applied.count, 1)
+        coordinator.handle(resolve(session: "S", endReason: "prompt_input_exit"))
+        // The exit must clear the hex memory, or `colorPaneIfNeeded`'s dedup would
+        // leave the restarted session sitting at the default background.
+        coordinator.handle(sessionStart(session: "S", repo: "/r", branch: "main"))
+        XCTAssertEqual(applied.count, 2, "a restarted session in the same pane re-colors")
+        XCTAssertEqual(applied[0].1, applied[1].1)
+    }
+
+    /// A genuine Stop (type "stop") — the only event that injects `/color`.
+    private func genuineStop(session: String = "CC-1", repo: String = "/tmp/proj") -> NotifyPayload {
+        let json: [String: Any] = [
+            "type": "stop", "session_uuid": session, "cwd": repo, "title": "t",
+            "summary": "s", "full_message": "m", "timestamp": 1.0, "repo_root": repo,
+            "branch": "main",
+        ]
+        return NotifyPayload.decode(try! JSONSerialization.data(withJSONObject: json))!
+    }
+
+    func testStopAfterExitReinjectsColorInTheSamePane() {
+        let coordinator = makeCoordinator()
+        var injected: [(String, String)] = []
+        coordinator.onInjectColor = { injected.append(($0, $1)) }
+        coordinator.onSetPaneBackground = { _, _ in }
+        coordinator.onResetPaneBackground = { _ in }
+
+        coordinator.handle(genuineStop(session: "S", repo: "/r"))
+        XCTAssertEqual(injected.count, 1)
+        coordinator.handle(resolve(session: "S", endReason: "prompt_input_exit"))
+        // The exit must clear the inject-once flag too, or the restarted session's
+        // pane would re-color while its prompt bar stayed default.
+        coordinator.handle(sessionStart(session: "S", repo: "/r", branch: "main"))
+        coordinator.handle(genuineStop(session: "S", repo: "/r"))
+        XCTAssertEqual(injected.count, 2, "a restarted session in the same pane re-injects /color")
+        XCTAssertEqual(injected.map(\.0), ["S", "S"])
+        XCTAssertEqual(injected.first?.1, injected.last?.1)
+    }
+
     func testSessionStartDedupsWithFollowingStop() {
         let coordinator = makeCoordinator()
         var applied: [(String, String)] = []

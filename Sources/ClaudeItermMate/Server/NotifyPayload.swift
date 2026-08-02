@@ -34,8 +34,9 @@ struct NotifyPayload: Codable, Equatable {
     // Message kind: "stop" for a genuine Stop event (older hooks omit it →
     // still handled as a Stop, but they cannot inject /color, see `isStop`);
     // "session_start" for the SessionStart hook's color trigger; "question" for
-    // an AskUserQuestion PreToolUse; "resolve" for its PostToolUse (clear the
-    // waiting tab); absent for a permission-prompt Notification.
+    // an AskUserQuestion PreToolUse; "resolve" for its PostToolUse and for
+    // SessionEnd (clear the waiting tab); absent for a permission-prompt
+    // Notification.
     let type: String?
     // AskUserQuestion questions + options (only on `type == "question"`).
     let questions: [Question]?
@@ -54,6 +55,12 @@ struct NotifyPayload: Codable, Equatable {
     // event without consulting the store. Optional: a hook script published
     // before this feature omits it, and the app must still decode.
     let promptID: String?
+    // SessionEnd's `reason` ("clear" | "logout" | "prompt_input_exit" | "other"),
+    // forwarded verbatim on a `resolve` from `--event session-end`. Absent on an
+    // AskUserQuestion answer (that session is still alive) and on resolves from
+    // hook scripts published before this feature — the app owns the policy of
+    // which reasons reset the pane background (`isSessionExit`).
+    let endReason: String?
 
     enum CodingKeys: String, CodingKey {
         case sessionUUID = "session_uuid"
@@ -64,6 +71,7 @@ struct NotifyPayload: Codable, Equatable {
         case branch
         case isWorktree = "is_worktree"
         case promptID = "prompt_id"
+        case endReason = "end_reason"
         case type, source, focusable, status, questions
     }
 
@@ -83,6 +91,7 @@ struct NotifyPayload: Codable, Equatable {
         focusable = try c.decodeIfPresent(Bool.self, forKey: .focusable) ?? true
         status = try c.decodeIfPresent(String.self, forKey: .status)
         promptID = try c.decodeIfPresent(String.self, forKey: .promptID)
+        endReason = try c.decodeIfPresent(String.self, forKey: .endReason)
         questions = try c.decodeIfPresent([Question].self, forKey: .questions)
     }
 
@@ -98,8 +107,34 @@ struct NotifyPayload: Codable, Equatable {
     /// AskUserQuestion PreToolUse event (carries `questions`).
     var isQuestion: Bool { type == "question" }
 
-    /// AskUserQuestion answered (PostToolUse): the app removes the waiting tab.
+    /// AskUserQuestion answered (PostToolUse) or the session ended (SessionEnd):
+    /// the app removes the waiting tab. Only the SessionEnd flavor carries
+    /// `endReason`, which is what tells the two apart (see `isSessionExit`).
     var isResolve: Bool { type == "resolve" }
+
+    /// The Claude Code process actually went away, so its pane background can be
+    /// reset to the profile default.
+    ///
+    /// SessionEnd's `reason` enum is exactly `clear` / `logout` /
+    /// `prompt_input_exit` / `other` — verified against the Claude Code 2.1.220
+    /// binary (`~/.local/share/claude/versions/2.1.220`, Mach-O arm64), whose only
+    /// SessionEnd-shaped reason literal is
+    /// `matcherMetadata:{fieldToMatch:"reason",values:["clear","logout","prompt_input_exit","other"]}`.
+    /// There is no `exit` reason: a genuine quit emits `prompt_input_exit`, so that
+    /// is the only value matched here.
+    ///
+    /// The other three deliberately do not reset: `clear` keeps Claude alive and is
+    /// immediately followed by a SessionStart (resetting there would flicker and
+    /// would depend on the arrival order of two independent node processes), while
+    /// `logout` and `other` leaving the pane colored is an accepted cost recorded in
+    /// the PRD. Absent reason (ask-done, or a pre-feature hook) is never an exit.
+    ///
+    /// `bypass_permissions_disabled` also exists in that binary (8 occurrences) but
+    /// is NOT part of the SessionEnd reason enum, so should such a session end ever
+    /// surface here it arrives as `other` and does not reset.
+    var isSessionExit: Bool {
+        isResolve && endReason == "prompt_input_exit"
+    }
 
     /// Parsed status; absent / unknown -> `.completed` (backward compatible).
     var sessionStatus: SessionStatus { SessionStatus(wire: status) }

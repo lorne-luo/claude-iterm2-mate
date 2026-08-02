@@ -18,6 +18,24 @@ final class ItermBgColorActionTests: XCTestCase {
         )
     }
 
+    func testResetArgumentsUseTheSentinelInPlaceOfAHex() {
+        XCTAssertEqual(
+            ItermBgColorAction.resetArguments(sessionUUID: "ABC-123"),
+            ["ABC-123", "default"]
+        )
+    }
+
+    /// The reset takes the same interpreter-first shape as `apply` — it must run
+    /// through the it2 venv's Python too, not the script's decorative shebang.
+    func testResetInterpreterArgumentsPutScriptPathFirst() {
+        XCTAssertEqual(
+            ItermBgColorAction.resetArguments(
+                scriptPath: "/support/set-pane-bg.py", sessionUUID: "ABC-123"
+            ),
+            ["/support/set-pane-bg.py", "ABC-123", "default"]
+        )
+    }
+
     /// Availability needs BOTH halves: the script file and a Python that has
     /// `iterm2` (the it2 venv's). Either one alone cannot color a pane.
     func testAvailabilityNeedsScriptAndInterpreter() {

@@ -55,7 +55,9 @@ struct HookInstaller {
     }
 
     /// The SessionEnd command line: clears the session's reminder tab when the
-    /// Claude Code session ends (any reason). Same script in session-end mode.
+    /// Claude Code session ends (any reason) and forwards SessionEnd's `reason`
+    /// as `end_reason`, from which the app decides whether to reset the pane
+    /// background. Same script in session-end mode.
     static func sessionEndHookCommand(scriptPath: String) -> String {
         "node \"\(scriptPath)\" --event session-end"
     }

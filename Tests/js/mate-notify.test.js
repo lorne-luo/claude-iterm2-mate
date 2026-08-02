@@ -7,8 +7,15 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { classifyStopStatus, shouldSendNotification, eventMode, buildQuestionFields } =
-  require("../../Sources/ClaudeItermMate/Resources/mate-notify.js");
+const {
+  classifyStopStatus,
+  shouldSendNotification,
+  eventMode,
+  buildQuestionFields,
+  buildResolveFields,
+  endReasonToForward,
+  FORWARDS_END_REASON,
+} = require("../../Sources/ClaudeItermMate/Resources/mate-notify.js");
 
 test("classifyStopStatus: trailing question mark -> waiting", () => {
   assert.strictEqual(classifyStopStatus("Should I proceed?"), "waiting");
@@ -125,6 +132,51 @@ test("baseFields (via buildQuestionFields): forwards prompt_id when present", ()
   // recognise and drop it without consulting its store.
   const f = buildQuestionFields({ prompt_id: "afb14fa8" }, "/x/proj", true, "S1");
   assert.strictEqual(f.prompt_id, "afb14fa8");
+});
+
+test("buildResolveFields: forwards SessionEnd's reason verbatim", () => {
+  // The app decides which reasons reset the pane background; the hook only reports.
+  // The reason enum is exactly these four (verified in the 2.1.220 binary).
+  for (const reason of ["prompt_input_exit", "clear", "logout", "other"]) {
+    const f = buildResolveFields("/x/proj", "S1", reason);
+    assert.strictEqual(f.type, "resolve");
+    assert.strictEqual(f.session_uuid, "S1");
+    assert.strictEqual(f.cwd, "/x/proj");
+    assert.strictEqual(f.end_reason, reason);
+  }
+});
+
+test("endReasonToForward: the session-end path reports the reason, ask-done does not", () => {
+  // The regressible wiring in `sendResolve`: only session-end may report a
+  // reason. Feeding ask-done's flag must yield undefined even though SessionEnd's
+  // input shape carries one.
+  const input = { reason: "prompt_input_exit" };
+  assert.strictEqual(FORWARDS_END_REASON["session-end"], true);
+  assert.strictEqual(FORWARDS_END_REASON["ask-done"], false);
+  assert.strictEqual(
+    endReasonToForward(input, FORWARDS_END_REASON["session-end"]),
+    "prompt_input_exit"
+  );
+  assert.strictEqual(endReasonToForward(input, FORWARDS_END_REASON["ask-done"]), undefined);
+  // End to end through the field builder: present on session-end, absent on ask-done.
+  assert.strictEqual(
+    buildResolveFields("/x/proj", "S1", endReasonToForward(input, FORWARDS_END_REASON["session-end"]))
+      .end_reason,
+    "prompt_input_exit"
+  );
+  assert.ok(
+    !("end_reason" in
+      buildResolveFields("/x/proj", "S1", endReasonToForward(input, FORWARDS_END_REASON["ask-done"])))
+  );
+  // A SessionEnd whose payload has no reason still omits the field.
+  assert.strictEqual(endReasonToForward({}, FORWARDS_END_REASON["session-end"]), undefined);
+});
+
+test("buildResolveFields: omits end_reason for ask-done and for a non-string reason", () => {
+  // ask-done passes undefined: that session is still alive, never reset.
+  assert.ok(!("end_reason" in buildResolveFields("/x/proj", "S1", undefined)));
+  assert.ok(!("end_reason" in buildResolveFields("/x/proj", "S1", "")));
+  assert.ok(!("end_reason" in buildResolveFields("/x/proj", "S1", 42)));
 });
 
 test("baseFields (via buildQuestionFields): omits prompt_id when absent or not a string", () => {

@@ -39,6 +39,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ItermBgColorAction().apply(sessionUUID: sessionUUID, hex: hex)
             }
         }
+        coordinator.onResetPaneBackground = { sessionUUID in
+            // Claude Code exited; hand the pane back to its profile default.
+            // Same off-main fire-and-forget shape as the apply path — and built
+            // inside the block for the same reason.
+            DispatchQueue.global(qos: .utility).async {
+                ItermBgColorAction().reset(sessionUUID: sessionUUID)
+            }
+        }
         coordinator.onInjectColor = { sessionUUID, name in
             // Fire-and-forget off the main thread. Only reached on a genuine Stop
             // event (gated on `isStop` in the coordinator), so the composer is an
