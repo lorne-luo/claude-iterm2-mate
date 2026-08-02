@@ -37,7 +37,14 @@ click to return to — so nothing sits idle waiting for you.
 ## Requirements
 
 - macOS 14+ on Apple Silicon (the released `.dmg` ships an arm64-only binary)
-- iTerm2 with the Python API enabled
+- iTerm2
+- **iTerm2's Python API enabled** — *Settings › General › Magic › Enable Python
+  API*. It ships **off**, and with it off every `it2`-powered action fails
+  silently: jump, pane coloring, `/color`, question answers. Having the `it2`
+  binary installed proves nothing here.
+- **Automation permission** — macOS asks the first time the app enumerates
+  iTerm2 sessions (*System Settings › Privacy & Security › Automation*). Without
+  it, reminders only toast and never become tabs.
 - Node.js (runs the Claude Code `Stop` hook)
 - For click-to-focus and pane coloring: [it2](https://pypi.org/project/it2/)
   (`uv tool install it2`). Beyond the CLI itself, its virtualenv provides the
@@ -107,6 +114,7 @@ confirmation prompt).
 
 | Item | What it does |
 | --- | --- |
+| Setup… | Open the prerequisite checklist (always available — it is where the hook gets installed) |
 | Hook status | Green when the `Stop` hook is registered; submenu to *Install Hook* / *Remove Hook…* |
 | Clear All Tabs | Dismiss every queued reminder tab |
 | Maximize Pane on Click | Toggle: focus + maximize the target pane, or focus only |
@@ -114,15 +122,34 @@ confirmation prompt).
 | Quit | Exit the app |
 
 One disabled warning row appears per unmet prerequisite, each carrying its own
-fix: iTerm2 not installed (reminders fall back to desktop notifications), `it2`
-not found (`uv tool install it2` — without it there is no jump, pane color,
-`/color`, or question answering), and "hook installed but no events received yet"
-(usually `node` missing from Claude Code's `PATH`). The same list is summarised in
-a toast at launch whenever something is missing. A socket-server failure gets its
-own row with the reason inline.
+fix: iTerm2 not installed, `it2` not found (`uv tool install it2`), `uv` not
+found, the iTerm2 Python API switched off, Automation permission not granted,
+and "hook installed but no events received yet" (usually `node` missing from
+Claude Code's `PATH`). A socket-server failure gets its own row with the reason
+inline.
 
 The rows are re-evaluated every time the menu opens, so installing a missing
 prerequisite clears the warning without restarting the app.
+
+## Setup checklist
+
+**Setup…** opens a checklist with one line per prerequisite: a green ✓, a red ✗,
+or a grey `?` when it genuinely cannot be checked (the Automation grant, for
+instance, is unanswerable while iTerm2 is not running — that is reported as
+unknown rather than guessed at either way). Each unmet line names what it takes
+down and offers the one action that helps: download iTerm2, copy the install
+command, open iTerm2 at the right setting, ask macOS for permission, install the
+hook.
+
+While the window is open it rechecks every 2 seconds, so ticking *Enable Python
+API* over in iTerm2 turns the line green without switching back or clicking
+anything. There is a **Recheck** button too.
+
+It opens by itself at launch when something blocking is unmet, or when the hook
+is not installed yet — **without taking focus**, so it never interrupts what you
+are typing in a terminal. Only degraded findings (no `uv`, no events yet) skip
+the window and get the usual summary toast. *Don't show this at launch* turns
+the automatic popup off; the menu-bar warnings stay either way.
 
 ## How it works
 
@@ -152,6 +179,8 @@ Source layout (`Sources/ClaudeItermMate/`):
 | Panels | `Panels/PanelFactory`, `Panels/ToastPanel`, `Panels/TabStripPanel`, `Panels/DetailPanel` |
 | Focus action | `Actions/ItermFocusAction`, `Geometry/EdgeGeometry` |
 | Hook management | `Hook/HookStatus`, `Hook/HookInstaller`, `Resources/mate-notify.js` |
+| Prerequisites | `Dependencies/DependencyReport`, `Dependencies/ItermPythonAPIProbe`, `Dependencies/AutomationPermission`, `Dependencies/UvLocator`, `Dependencies/LaunchPresentation` |
+| Setup checklist | `Setup/SetupRow`, `Setup/SetupView`, `Setup/SetupWindowController`, `Setup/SetupFix` |
 | Menu bar | `MenuBar/MenuBarController` |
 
 ## Testing
