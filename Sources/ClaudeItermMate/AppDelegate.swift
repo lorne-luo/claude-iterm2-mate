@@ -127,8 +127,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Say what is missing instead of looking healthy while doing nothing.
-        // No-op when every dependency is satisfied.
+        // Say what is missing instead of looking healthy while doing nothing:
+        // the Setup checklist when something blocking is unmet (or the hook is
+        // not installed), the summary toast when it is only degraded, nothing
+        // when everything is satisfied. See LaunchPresentation.decide.
         menuBar?.showDependencyToastIfNeeded()
     }
 

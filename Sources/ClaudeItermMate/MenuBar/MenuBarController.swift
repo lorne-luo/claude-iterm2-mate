@@ -43,20 +43,37 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         populate(menu)
     }
 
-    /// Summarize unmet dependencies once at launch, reusing the existing info
-    /// toast. Nothing is shown when everything is satisfied. No "already shown"
-    /// flag: it stops on its own once the dependencies are in place.
+    /// Say what is unmet at launch, at the volume the situation deserves: the
+    /// Setup checklist when the app cannot do its job, the existing summary
+    /// toast when it merely runs degraded, nothing when it is healthy.
+    ///
+    /// No "already shown" flag on either surface: both stop on their own once
+    /// the prerequisites are in place.
     func showDependencyToastIfNeeded() {
-        let missing = report().missing
-        guard !missing.isEmpty else { return }
-        infoToast.show(
-            title: "Missing dependencies",
-            message: missing.map(\.toastLine).joined(separator: "\n"),
-            // The default 4 s is too short to read a multi-line list.
-            duration: 8,
-            icon: "exclamationmark.triangle.fill",
-            tint: .orange
-        )
+        let report = report()
+        switch LaunchPresentation.decide(
+            report: report,
+            hookInstalled: HookStatus.current() == .installed,
+            suppressed: AppSettings.suppressSetupAtLaunch
+        ) {
+        case .setupWindow:
+            SetupWindowController.shared.showAtLaunch()
+        case .infoToast:
+            infoToast.show(
+                title: "Missing dependencies",
+                // The toast is not interactive (it dismisses itself and never
+                // becomes key), so it points at the menu rather than pretending
+                // to be a link.
+                message: report.missing.map(\.toastLine).joined(separator: "\n")
+                    + "\nMenu bar → Setup… for the full checklist.",
+                // The default 4 s is too short to read a multi-line list.
+                duration: 8,
+                icon: "exclamationmark.triangle.fill",
+                tint: .orange
+            )
+        case .none:
+            break
+        }
     }
 
     private func refreshIcon() {
@@ -81,6 +98,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         let hookStatus = HookStatus.current()
         let installed = hookStatus == .installed
+
+        // Always first and always enabled — this is where the hook gets
+        // installed, so gating it on the hook would lock the user out of the
+        // only screen that can help. Explicit isEnabled is required:
+        // autoenablesItems is off.
+        let setup = NSMenuItem(title: "Setup…", action: #selector(openSetup), keyEquivalent: "")
+        setup.target = self
+        setup.isEnabled = true
+        setup.image = symbol("checklist")
+        menu.addItem(setup)
+        menu.addItem(.separator())
 
         if let serverError {
             let item = NSMenuItem(title: "Not receiving: \(serverError)", action: nil, keyEquivalent: "")
@@ -174,6 +202,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.image = symbol("xmark.circle")
         menu.addItem(quit)
+    }
+
+    @objc private func openSetup() {
+        SetupWindowController.shared.showFromMenu()
     }
 
     @objc private func installHook() {
