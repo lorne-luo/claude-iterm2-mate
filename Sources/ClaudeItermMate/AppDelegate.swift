@@ -63,7 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Evaluated per menu open / icon refresh, so installing a missing
         // dependency clears the warning without restarting the app.
-        menuBar = MenuBarController(report: { DependencyReport.current() })
+        menuBar = MenuBarController(
+            report: { DependencyReport.current() },
+            playSound: { [weak self] in self?.coordinator.onPlaySound?() }
+        )
         tabStrip = TabStripPanel(
             store: store,
             onClick: { [weak self] item in self?.activate(item) },

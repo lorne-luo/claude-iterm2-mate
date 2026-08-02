@@ -8,13 +8,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// installs `it2` while the app runs must see the warning clear on the next
     /// menu open, without restarting.
     private let report: () -> DependencyReport
+    private let playSound: () -> Void
     private var statusItem: NSStatusItem!
     private var serverError: String?
     private let menu = NSMenu()
     private lazy var infoToast = InfoToastPanel()
 
-    init(report: @escaping () -> DependencyReport) {
+    init(report: @escaping () -> DependencyReport, playSound: @escaping () -> Void = { NSSound.beep() }) {
         self.report = report
+        self.playSound = playSound
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         refreshIcon()
@@ -278,6 +280,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func togglePlaySound(_ sender: NSMenuItem) {
         AppSettings.playSound.toggle()
         sender.state = AppSettings.playSound ? .on : .off
+        if AppSettings.playSound { playSound() }
     }
 
     @objc private func toggleLogin(_ sender: NSMenuItem) {
