@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
+# ^ decorative only. ScriptInstaller never sets +x and ItermBgColorAction spawns
+#   this file as `<interpreter> <this-path> <uuid> <hex>`, where the interpreter
+#   is PythonInterpreter.resolve() -> the it2 CLI's venv python (the one that has
+#   `iterm2`). /usr/bin/python3 does NOT have it.
 """Set a specific iTerm2 session's background color via the iTerm2 Python API.
 
-Canonical reference copy. Install it (machine-local, like iterm-focus-pane.py):
-  cp set-pane-bg.py ~/.claude/scripts/set-pane-bg.py
-  chmod +x ~/.claude/scripts/set-pane-bg.py
-and set its shebang to a Python that has the `iterm2` package (typically the
-`it2` CLI's venv, e.g. ~/.local/share/uv/tools/it2/bin/python). ItermBgColorAction
-spawns ~/.claude/scripts/set-pane-bg.py directly.
-
-Invoked by ClaudeItermMate on SessionStart with the session UUID (the part
+Bundled with the app and published to
+~/Library/Application Support/ClaudeItermMate/ by ScriptInstaller on launch.
+Invoked by ItermBgColorAction on SessionStart with the session UUID (the part
 after ':' in ITERM_SESSION_ID) and an RRGGBB hex. Applies a per-session profile
 override so only that pane's background changes; it does NOT touch the tty, so a
 running Claude TUI is unaffected. All failures exit silently — the caller

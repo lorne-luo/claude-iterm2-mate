@@ -8,11 +8,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var server: NotifyServer?
     private var tabStrip: TabStripPanel?
     private lazy var detail = DetailPanel(usage: usage)
-    private let focusAction = ItermFocusAction()
-    private let bgColorAction = ItermBgColorAction()
-    private let colorAction = ItermColorAction()
-    private let sendTextAction = ItermSendTextAction()
     private var menuBar: MenuBarController?
+
+    // The four iTerm2 actions are built at the point of use, never stored.
+    // Each one resolves `it2` and its interpreter in `init`, so a stored copy
+    // freezes that answer at launch: a user who installs `it2` while the app is
+    // running would see the menu warning clear (DependencyReport re-resolves)
+    // while every click, pane color and answer stayed dead. They are cheap
+    // structs — a few `isExecutableFile` stats and one 512-byte read — and the
+    // work they gate always spawns a Process anyway.
+    private var focusAction: ItermFocusAction { ItermFocusAction() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel(usage: usage), usage: usage)
@@ -23,33 +28,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.desktopNotify(title: title, subtitle: subtitle, body: body)
         }
         coordinator.isPaneColoringEnabled = { AppSettings.colorPanes }
-        let bgColorAction = self.bgColorAction
         coordinator.onSetPaneBackground = { sessionUUID, hex in
             // Fire-and-forget off the main thread. No delay needed: the Python
             // API sets the pane's background at the app layer regardless of TUI
             // state (unlike the old /color keystroke injection). Gating/dedup are
             // handled in the coordinator before this runs.
+            // Built inside the block, not captured: a captured struct would pin
+            // launch-time `it2` resolution for the life of the app.
             DispatchQueue.global(qos: .utility).async {
-                bgColorAction.apply(sessionUUID: sessionUUID, hex: hex)
+                ItermBgColorAction().apply(sessionUUID: sessionUUID, hex: hex)
             }
         }
         coordinator.onResetPaneBackground = { sessionUUID in
             // Claude Code exited; hand the pane back to its profile default.
-            // Same off-main fire-and-forget shape as the apply path.
+            // Same off-main fire-and-forget shape as the apply path — and built
+            // inside the block for the same reason.
             DispatchQueue.global(qos: .utility).async {
-                bgColorAction.reset(sessionUUID: sessionUUID)
+                ItermBgColorAction().reset(sessionUUID: sessionUUID)
             }
         }
-        let colorAction = self.colorAction
         coordinator.onInjectColor = { sessionUUID, name in
             // Fire-and-forget off the main thread. Only reached on a genuine Stop
             // event (gated on `isStop` in the coordinator), so the composer is an
             // ordinary, stashable prompt — never a live permission/question TUI.
             DispatchQueue.global(qos: .utility).async {
-                colorAction.inject(sessionUUID: sessionUUID, colorName: name)
+                ItermColorAction().inject(sessionUUID: sessionUUID, colorName: name)
             }
         }
-        menuBar = MenuBarController(focusAvailable: focusAction.canFocus)
+        // Any payload arriving proves the hook → socket path works end to end.
+        // Guarded: this fires on EVERY payload, and a permission storm would
+        // otherwise rewrite the same `true` dozens of times. It is a one-way latch.
+        coordinator.onDidReceiveEvent = {
+            if !AppSettings.hasReceivedEvent { AppSettings.hasReceivedEvent = true }
+        }
+        // Evaluated per menu open / icon refresh, so installing a missing
+        // dependency clears the warning without restarting the app.
+        menuBar = MenuBarController(report: { DependencyReport.current() })
         tabStrip = TabStripPanel(
             store: store,
             onClick: { [weak self] item in self?.activate(item) },
@@ -64,10 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // hook also clears it once the answer lands.
         // One implementation shared by the detail popup and the toast, so
         // answering/chatting behaves identically from either surface.
-        let sendTextAction = self.sendTextAction
         let answerHandler: (ReminderItem, ItermSendTextAction.Answer, Int) -> Void = { [weak self] item, answer, optionCount in
             DispatchQueue.global(qos: .userInitiated).async {
-                sendTextAction.answer(sessionUUID: item.sessionUUID, answer: answer, optionCount: optionCount)
+                ItermSendTextAction()
+                    .answer(sessionUUID: item.sessionUUID, answer: answer, optionCount: optionCount)
             }
             self?.store.remove(sessionUUID: item.sessionUUID)
         }
@@ -86,6 +100,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // always maximized, whatever the maximize-on-click toggle says.
         detail.onJumpMaximized = jumpMaximizedHandler
         coordinator.onJumpMaximized = jumpMaximizedHandler
+        // MUST run before the server starts, and synchronously. The server
+        // accepts payloads the instant it is up; a `session_start` arriving
+        // before the scripts are on disk finds `ItermBgColorAction.available`
+        // false, and `colorPaneIfNeeded` has already recorded the hex in
+        // `coloredSessions` before firing — so that pane is marked done and is
+        // never retried for the life of the process. Two ~3 KB copies; the
+        // main-thread cost is irrelevant next to a permanently uncolored pane.
+        do { try ScriptInstaller().install() }
+        catch { NSLog("Script publish on launch failed: \(error)") }
+
         let server = NotifyServer(socketPath: NotifyServer.defaultSocketPath) { [weak self] payload in
             self?.coordinator.handle(payload)
         }
@@ -110,6 +134,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 catch { NSLog("Hook refresh on launch failed: \(error)") }
             }
         }
+
+        // Say what is missing instead of looking healthy while doing nothing:
+        // the Setup checklist when something blocking is unmet (or the hook is
+        // not installed), the summary toast when it is only degraded, nothing
+        // when everything is satisfied. See LaunchPresentation.decide.
+        menuBar?.showDependencyToastIfNeeded()
     }
 
     static func configureReminderSettings(
