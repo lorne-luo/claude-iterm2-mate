@@ -38,4 +38,15 @@ enum AppSettings {
         get { UserDefaults.standard.object(forKey: playSoundKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: playSoundKey) }
     }
+
+    private static let hasReceivedEventKey = "hasReceivedHookEvent"
+
+    /// One-way latch: true once ANY hook payload has ever reached the app.
+    /// Diagnostic state, not a preference — deliberately absent from the menu.
+    /// Backs `DependencyReport`'s delivery check (D2: detect the symptom, never
+    /// probe `node`).
+    static var hasReceivedEvent: Bool {
+        get { UserDefaults.standard.bool(forKey: hasReceivedEventKey) }
+        set { UserDefaults.standard.set(newValue, forKey: hasReceivedEventKey) }
+    }
 }

@@ -1,16 +1,20 @@
 import AppKit
 import ServiceManagement
+import SwiftUI
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
-    private let focusAvailable: Bool
+    /// Re-evaluated on every populate/refreshIcon, never cached: a user who
+    /// installs `it2` while the app runs must see the warning clear on the next
+    /// menu open, without restarting.
+    private let report: () -> DependencyReport
     private var statusItem: NSStatusItem!
     private var serverError: String?
     private let menu = NSMenu()
     private lazy var infoToast = InfoToastPanel()
 
-    init(focusAvailable: Bool) {
-        self.focusAvailable = focusAvailable
+    init(report: @escaping () -> DependencyReport) {
+        self.report = report
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         refreshIcon()
@@ -31,14 +35,33 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         populate(menu)
     }
 
-    /// Rebuild the menu each time it opens so the hook light reflects live
-    /// settings.json state.
+    /// Rebuild the menu each time it opens so the hook light and the dependency
+    /// rows reflect live state. The icon is refreshed too: a dependency the user
+    /// just installed must stop warning without an app restart.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshIcon()
         populate(menu)
     }
 
+    /// Summarize unmet dependencies once at launch, reusing the existing info
+    /// toast. Nothing is shown when everything is satisfied. No "already shown"
+    /// flag: it stops on its own once the dependencies are in place.
+    func showDependencyToastIfNeeded() {
+        let missing = report().missing
+        guard !missing.isEmpty else { return }
+        infoToast.show(
+            title: "Missing dependencies",
+            message: missing.map(\.toastLine).joined(separator: "\n"),
+            // The default 4 s is too short to read a multi-line list.
+            duration: 8,
+            icon: "exclamationmark.triangle.fill",
+            tint: .orange
+        )
+    }
+
     private func refreshIcon() {
-        let symbol = (focusAvailable && serverError == nil) ? "bell.badge" : "exclamationmark.triangle"
+        let healthy = !report().hasAnyMissing && serverError == nil
+        let symbol = healthy ? "bell.badge" : "exclamationmark.triangle"
         statusItem.button?.image = NSImage(
             systemSymbolName: symbol,
             accessibilityDescription: "Claude iTerm2 Mate"
@@ -66,14 +89,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(item)
             menu.addItem(.separator())
         }
-        if !focusAvailable {
-            let warn = NSMenuItem(
-                title: "it2 not found — run: uv tool install it2",
-                action: nil, keyEquivalent: ""
-            )
-            warn.isEnabled = false
-            warn.image = symbol("exclamationmark.triangle", color: .systemYellow)
-            menu.addItem(warn)
+        // One disabled row per unmet dependency, each carrying its own fix.
+        let missing = report().missing
+        if !missing.isEmpty {
+            for dependency in missing {
+                // Required: autoenablesItems is off, so enablement is ours to set.
+                let warn = NSMenuItem(title: dependency.menuTitle, action: nil, keyEquivalent: "")
+                warn.isEnabled = false
+                warn.image = symbol("exclamationmark.triangle", color: .systemYellow)
+                menu.addItem(warn)
+            }
             menu.addItem(.separator())
         }
 

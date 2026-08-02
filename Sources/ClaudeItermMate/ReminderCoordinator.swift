@@ -70,6 +70,12 @@ final class ReminderCoordinator {
     /// on; AppDelegate wires it to `AppSettings.playSound`.
     var isSoundEnabled: () -> Bool = { true }
 
+    /// Invoked at the very top of `handle` for ANY payload — proof that the
+    /// Node hook → socket path works end to end. AppDelegate latches
+    /// `AppSettings.hasReceivedEvent`; injected (not read directly) to keep the
+    /// coordinator testable, like `isTabStripEnabled` / `isSoundEnabled`.
+    var onDidReceiveEvent: (() -> Void)?
+
     /// Play the reminder sound. Injected by AppDelegate; tests observe it.
     /// Called once per genuinely-presented toast (after the permission-storm and
     /// question-clobber dedup guards), so it fires for both completed and waiting.
@@ -135,6 +141,9 @@ final class ReminderCoordinator {
     /// present on main. A reminder whose session is not findable still toasts
     /// but never becomes a tab.
     func handle(_ p: NotifyPayload) {
+        // Before any branching: session_start and resolve are payloads too, and
+        // session_start is usually the very first one to arrive.
+        onDidReceiveEvent?()
         if p.isSessionStart {
             // Pane-coloring trigger, not a reminder.
             usage?.probeHudCache()

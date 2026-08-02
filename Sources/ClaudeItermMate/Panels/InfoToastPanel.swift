@@ -12,9 +12,15 @@ final class InfoToastPanel {
 
     static let width: CGFloat = 360
 
-    func show(title: String, message: String, duration: TimeInterval = 4) {
+    func show(
+        title: String,
+        message: String,
+        duration: TimeInterval = 4,
+        icon: String = "checkmark.circle.fill",
+        tint: Color = .green
+    ) {
         hide()
-        let root = InfoToastView(title: title, message: message)
+        let root = InfoToastView(title: title, message: message, icon: icon, tint: tint)
         let visible = NSScreen.main?.visibleFrame ?? .zero
         let height = Self.fittingHeight(root)
         let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
@@ -58,12 +64,16 @@ final class InfoToastPanel {
 struct InfoToastView: View {
     let title: String
     let message: String
+    /// Defaulted so the hook-install confirmation ("Ready for work") is unchanged;
+    /// the dependency summary passes a warning triangle instead.
+    var icon: String = "checkmark.circle.fill"
+    var tint: Color = .green
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: icon)
                 .font(.system(size: 18))
-                .foregroundStyle(.green)
+                .foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
