@@ -14,13 +14,15 @@ final class ReminderCoordinatorTests: XCTestCase {
         var lastOnAnswer: ((ItermSendTextAction.Answer, Int) -> Void)?
         var lastOnChat: (() -> Void)?
         var lastOnJumpMaximized: (() -> Void)?
+        var lastOnQuickReply: ((QuickReply) -> Void)?
         var lastShowsMinimize: Bool?
         func show(item: ReminderItem, on visible: CGRect, showsMinimize: Bool,
                   onClick: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
                   onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
                   onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
                   onChat: @escaping () -> Void,
-                  onJumpMaximized: @escaping () -> Void) {
+                  onJumpMaximized: @escaping () -> Void,
+                  onQuickReply: @escaping (QuickReply) -> Void) {
             shown.append(item.sessionUUID)
             lastShowsMinimize = showsMinimize
             lastOnClick = onClick
@@ -30,6 +32,7 @@ final class ReminderCoordinatorTests: XCTestCase {
             lastOnAnswer = onAnswer
             lastOnChat = onChat
             lastOnJumpMaximized = onJumpMaximized
+            lastOnQuickReply = onQuickReply
         }
         func hide(intoTab: Bool) { hidden += 1; hideIntoTab.append(intoTab) }
     }
@@ -588,6 +591,36 @@ final class ReminderCoordinatorTests: XCTestCase {
         XCTAssertEqual(answered.map(\.0), ["S1"])
         XCTAssertEqual(answered.first?.1, 2)
         XCTAssertTrue(coordinator.store.items.isEmpty, "answering removes the reminder")
+    }
+
+    /// A quick reply from the toast fires onQuickReply with the right session and
+    /// canned prompt, and consumes the reminder — the same teardown as answering.
+    func testToastQuickReplyInvokesCoordinatorQuickReplyAndRemoves() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        var replied: [(String, String)] = []
+        coordinator.onQuickReply = { item, reply in replied.append((item.sessionUUID, reply.id)) }
+        coordinator.handle(payload(session: "S1"))
+        try await settle()
+        XCTAssertNotNil(toast.lastOnQuickReply, "a findable toast wires onQuickReply")
+        toast.lastOnQuickReply?(QuickReply.all[1])
+        XCTAssertEqual(replied.map(\.0), ["S1"])
+        XCTAssertEqual(replied.first?.1, "commit")
+        XCTAssertTrue(coordinator.store.items.isEmpty, "a quick reply removes the reminder")
+    }
+
+    /// A second click during the fade-out must not fire twice — same `displayed`
+    /// token guard the answer path uses.
+    func testToastQuickReplyFiresOnlyOnce() async throws {
+        let toast = SpyToast()
+        let coordinator = coordinator(toast, duration: 10)
+        var count = 0
+        coordinator.onQuickReply = { _, _ in count += 1 }
+        coordinator.handle(payload(session: "S1"))
+        try await settle()
+        toast.lastOnQuickReply?(QuickReply.all[0])
+        toast.lastOnQuickReply?(QuickReply.all[0])
+        XCTAssertEqual(count, 1)
     }
 
     // AC3: "Chat about this" from the toast fires onChat and removes the item.

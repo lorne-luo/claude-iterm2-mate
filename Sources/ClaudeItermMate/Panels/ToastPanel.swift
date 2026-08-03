@@ -8,7 +8,8 @@ protocol ToastPanelProtocol: AnyObject {
               onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
               onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
               onChat: @escaping () -> Void,
-              onJumpMaximized: @escaping () -> Void)
+              onJumpMaximized: @escaping () -> Void,
+              onQuickReply: @escaping (QuickReply) -> Void)
     /// Dismiss the toast. `intoTab` true → shrink toward the tab strip (it is
     /// becoming a tab); false → fade out in place (it is being dropped, so a
     /// fly-into-the-strip animation would be misleading — nothing lands there).
@@ -27,6 +28,9 @@ final class ToastPanel: ToastPanelProtocol {
     /// Whether the shown toast carries the chevron — its row must be included when
     /// re-measuring on toggle, or the message loses its last line.
     private var shownShowsToggle = false
+    /// Same story for the quick-reply row: it is another ~24pt the re-measure
+    /// must account for.
+    private var shownShowsQuickReplies = false
 
     private let usage: UsageService?
 
@@ -48,7 +52,8 @@ final class ToastPanel: ToastPanelProtocol {
               onMinimize: @escaping () -> Void, onClose: @escaping () -> Void,
               onAnswer: @escaping (ItermSendTextAction.Answer, Int) -> Void,
               onChat: @escaping () -> Void,
-              onJumpMaximized: @escaping () -> Void) {
+              onJumpMaximized: @escaping () -> Void,
+              onQuickReply: @escaping (QuickReply) -> Void) {
         hide(intoTab: false)
         // Whether to offer the chevron is decided from two toggle-less heights, so
         // the comparison is apples-to-apples; only then is the final height measured
@@ -56,13 +61,19 @@ final class ToastPanel: ToastPanelProtocol {
         // row (~16pt) and clipped the message's last line. Only a plain toast pays
         // for the extra passes — a question is never `lineLimit`-truncated, its
         // height already follows its options.
-        let bare = fittingHeight(item: item, expanded: false, toggle: false)
+        // Quick replies need a session we can send keystrokes to — the same
+        // condition the minimize button already carries.
+        let showsQuickReplies = showsMinimize
+        let bare = fittingHeight(item: item, expanded: false, toggle: false,
+                                 quickReplies: showsQuickReplies)
         let showsExpandToggle = item.kind == .question
             ? false
             : Self.needsExpandToggle(collapsed: bare,
-                                     expanded: fittingHeight(item: item, expanded: true, toggle: false))
+                                     expanded: fittingHeight(item: item, expanded: true, toggle: false,
+                                                             quickReplies: showsQuickReplies))
         let height = showsExpandToggle
-            ? fittingHeight(item: item, expanded: false, toggle: true)
+            ? fittingHeight(item: item, expanded: false, toggle: true,
+                            quickReplies: showsQuickReplies)
             : bare
         let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
         // canBecomeKey so the SwiftUI tap gesture receives the click. The panel
@@ -92,7 +103,11 @@ final class ToastPanel: ToastPanelProtocol {
             onJumpMaximized: onJumpMaximized,
             onEditingBegan: { [weak panel] in panel?.makeKey() },
             showsExpandToggle: showsExpandToggle,
-            onToggleExpand: { [weak self] expanded in self?.regrow(expanded: expanded) }
+            onToggleExpand: { [weak self] expanded in self?.regrow(expanded: expanded) },
+            showsQuickReplies: showsQuickReplies,
+            // No self-dismiss: the coordinator tears the toast down (cancel timer,
+            // drop the item) exactly as it does for an answer.
+            onQuickReply: onQuickReply
         ))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
@@ -100,6 +115,7 @@ final class ToastPanel: ToastPanelProtocol {
         shownItem = item
         shownVisible = visible
         shownShowsToggle = showsExpandToggle
+        shownShowsQuickReplies = showsQuickReplies
     }
 
     /// Re-measure for the new expansion state and re-frame the panel. Because
@@ -109,7 +125,8 @@ final class ToastPanel: ToastPanelProtocol {
     /// expanded content draws — never a clipped frame.
     private func regrow(expanded: Bool) {
         guard let panel, let item = shownItem else { return }
-        let height = fittingHeight(item: item, expanded: expanded, toggle: shownShowsToggle)
+        let height = fittingHeight(item: item, expanded: expanded, toggle: shownShowsToggle,
+                                   quickReplies: shownShowsQuickReplies)
         let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height),
                                             visible: shownVisible)
         panel.setFrame(frame, display: true)
@@ -122,10 +139,12 @@ final class ToastPanel: ToastPanelProtocol {
     /// `usage` must be passed (as DetailPanel does) and `toggle` must match what the
     /// live view renders: both the meters and the chevron add height the probe would
     /// otherwise miss, and the shortfall clipped the message's last line.
-    private func fittingHeight(item: ReminderItem, expanded: Bool, toggle: Bool) -> CGFloat {
+    private func fittingHeight(item: ReminderItem, expanded: Bool, toggle: Bool,
+                               quickReplies: Bool) -> CGFloat {
         let probe = NSHostingView(
             rootView: ToastView(item: item, usage: usage, scrolls: false,
-                                measuresExpanded: expanded, showsExpandToggle: toggle)
+                                measuresExpanded: expanded, showsExpandToggle: toggle,
+                                showsQuickReplies: quickReplies)
                 .frame(width: Self.width)
         )
         probe.layoutSubtreeIfNeeded()
@@ -221,6 +240,10 @@ struct ToastView: View {
     var showsExpandToggle: Bool = false
     /// Reports the new expansion state so the panel can re-measure and re-frame.
     var onToggleExpand: (Bool) -> Void = { _ in }
+    /// The quick-reply row at the card's bottom edge; false for a session we
+    /// cannot send keystrokes to (nothing to send them at).
+    var showsQuickReplies: Bool = false
+    var onQuickReply: (QuickReply) -> Void = { _ in }
     /// Drives the waiting toast's bright-white breathing glow (matches the tab).
     @State private var breathe = false
     /// Live expansion state; see `measuresExpanded` for why the probe uses its own.
@@ -358,6 +381,10 @@ struct ToastView: View {
                 messageBody
                 if showsExpandToggle {
                     expandToggle
+                }
+                if showsQuickReplies {
+                    QuickReplyBar(onQuickReply: onQuickReply)
+                        .padding(.top, 2)
                 }
             }
         }

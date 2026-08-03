@@ -106,10 +106,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.focusAction.focus(sessionUUID: item.sessionUUID, maximize: true)
             self?.store.remove(sessionUUID: item.sessionUUID)
         }
+        // A quick reply is typed into the composer and submitted, then the
+        // reminder is consumed — the session is about to produce a new one.
+        let quickReplyHandler: (ReminderItem, QuickReply) -> Void = { [weak self] item, reply in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let sent = ItermSendTextAction()
+                    .submit(sessionUUID: item.sessionUUID, text: reply.text)
+                guard !sent else { return }
+                DispatchQueue.main.async {
+                    self?.desktopNotify(
+                        title: "Quick reply not delivered",
+                        subtitle: item.projectName,
+                        body: "iTerm2 rejected the keystrokes — type it in the pane instead."
+                    )
+                }
+            }
+            self?.store.remove(sessionUUID: item.sessionUUID)
+        }
         detail.onAnswer = answerHandler
         detail.onChat = jumpMaximizedHandler
+        detail.onQuickReply = quickReplyHandler
         coordinator.onAnswer = answerHandler
         coordinator.onChat = jumpMaximizedHandler
+        coordinator.onQuickReply = quickReplyHandler
         // Double-clicking a title row (toast or hover popup) is the same jump:
         // always maximized, whatever the maximize-on-click toggle says.
         detail.onJumpMaximized = jumpMaximizedHandler

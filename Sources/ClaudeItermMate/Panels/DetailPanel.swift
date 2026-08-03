@@ -26,6 +26,11 @@ final class DetailPanel {
     /// Invoked for "Chat about this": jump to + maximize the owning pane.
     var onChat: ((ReminderItem) -> Void)?
 
+    /// Invoked when a quick-reply icon is clicked: type the canned prompt into
+    /// the owning pane and submit it. Same contract as
+    /// `ReminderCoordinator.onQuickReply`.
+    var onQuickReply: ((ReminderItem, QuickReply) -> Void)?
+
     /// Invoked when the popup's header is double-clicked: jump to the owning pane
     /// and maximize it unconditionally (ignoring the maximize-on-click toggle).
     var onJumpMaximized: ((ReminderItem) -> Void)?
@@ -86,6 +91,10 @@ final class DetailPanel {
             onJumpMaximized: { [weak self] in
                 self?.dismiss()
                 self?.onJumpMaximized?(item)
+            },
+            onQuickReply: { [weak self] reply in
+                self?.dismiss()
+                self?.onQuickReply?(item, reply)
             }
         )
         if let host {
@@ -145,6 +154,10 @@ struct DetailView: View {
     /// Double-click on the header: always jump to the *maximized* pane, whatever
     /// the maximize-on-click toggle says. Mirrors the toast's title row.
     var onJumpMaximized: () -> Void = {}
+    /// A canned prompt typed into the owning pane. The popup only ever shows for
+    /// a tab, and a tab only exists for a findable session, so unlike the toast
+    /// the row needs no availability flag.
+    var onQuickReply: (QuickReply) -> Void = { _ in }
 
     /// Interactive answer controls render only for a single-question
     /// AskUserQuestion; multi-question prompts fall back to the text body plus a
@@ -228,6 +241,14 @@ struct DetailView: View {
             Divider()
 
             messageBody
+
+            Divider()
+
+            // Pinned to the card's bottom edge: `messageBody` takes the slack
+            // (it is the one that scrolls), so the row never drifts upward.
+            QuickReplyBar(onQuickReply: onQuickReply)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(maxHeight: scrolls ? .infinity : nil, alignment: .topLeading)

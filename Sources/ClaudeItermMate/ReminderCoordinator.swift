@@ -29,6 +29,11 @@ final class ReminderCoordinator {
     /// Same contract as `DetailPanel.onChat`.
     var onChat: ((ReminderItem) -> Void)?
 
+    /// Invoked when a quick-reply icon is clicked on the toast: type the canned
+    /// prompt into the pane and submit it. Same contract as
+    /// `DetailPanel.onQuickReply`.
+    var onQuickReply: ((ReminderItem, QuickReply) -> Void)?
+
     /// Invoked when the toast's title row is double-clicked: jump to the pane and
     /// maximize it unconditionally (ignoring the maximize-on-click toggle), then
     /// consume the reminder. Same contract as `DetailPanel.onJumpMaximized`.
@@ -398,6 +403,13 @@ final class ReminderCoordinator {
                     // jumping there) and hand off the maximized jump.
                     self?.complete(token: token, session: session, findable: false)
                     self?.onJumpMaximized?(item)
+                },
+                onQuickReply: { [weak self] reply in
+                    // Same teardown-then-inject shape (and same double-fire guard)
+                    // as answering: the reminder is handled once the prompt is sent.
+                    guard self?.displayed?.token == token else { return }
+                    self?.complete(token: token, session: session, findable: false)
+                    self?.onQuickReply?(item, reply)
                 }
             )
             displayed = Displayed(token: token, session: session, findable: findable)

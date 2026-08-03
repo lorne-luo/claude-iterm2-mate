@@ -54,6 +54,20 @@ struct ItermSendTextAction {
         ["session", "send", "-s", sessionUUID, fragment]
     }
 
+    /// Fragments for a quick reply: the prompt text, then the submit key. Two
+    /// sends rather than one `text + "\r"` so the composer has the whole line
+    /// before it is submitted (same reasoning as the `/color` injection).
+    static func submitSequence(text: String) -> [String] {
+        [text, submit]
+    }
+
+    /// Type `text` into the pane's composer and submit it. Same failure
+    /// reporting as `answer`: false means it did not land.
+    @discardableResult
+    func submit(sessionUUID: String, text: String) -> Bool {
+        send(sessionUUID: sessionUUID, fragments: Self.submitSequence(text: text))
+    }
+
     /// Send the answer to the pane. Runs each fragment sequentially (order
     /// matters) and blocks briefly per spawn; callers dispatch off-main.
     /// Returns false when the answer did not reach the pane — `it2` exits
@@ -62,11 +76,18 @@ struct ItermSendTextAction {
     /// status has to be checked or the failure is completely silent.
     @discardableResult
     func answer(sessionUUID: String, answer: Answer, optionCount: Int) -> Bool {
+        send(sessionUUID: sessionUUID,
+             fragments: Self.injectionSequence(answer, optionCount: optionCount))
+    }
+
+    /// Spawn one `it2 session send` per fragment, in order, stopping at the first
+    /// failure. Shared by the answer and quick-reply paths.
+    private func send(sessionUUID: String, fragments: [String]) -> Bool {
         guard let it2URL else {
-            Self.log.info("it2 unavailable; answer injection skipped")
+            Self.log.info("it2 unavailable; injection skipped")
             return false
         }
-        for fragment in Self.injectionSequence(answer, optionCount: optionCount) {
+        for fragment in fragments {
             let p = Process()
             p.executableURL = it2URL
             p.arguments = Self.arguments(sessionUUID: sessionUUID, fragment: fragment)
@@ -82,11 +103,11 @@ struct ItermSendTextAction {
                 guard p.terminationStatus == 0 else {
                     let detail = String(data: errData, encoding: .utf8)?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    Self.log.error("answer send exited \(p.terminationStatus): \(detail, privacy: .public)")
+                    Self.log.error("it2 send exited \(p.terminationStatus): \(detail, privacy: .public)")
                     return false
                 }
             } catch {
-                Self.log.error("answer send failed: \(error.localizedDescription)")
+                Self.log.error("it2 send failed: \(error.localizedDescription)")
                 return false
             }
         }
