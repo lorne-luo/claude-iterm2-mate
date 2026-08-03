@@ -21,7 +21,7 @@ final class QuickReplyTests: XCTestCase {
 
     func testTextsAreTheRequestedPrompts() {
         XCTAssertEqual(QuickReply.all.map(\.text), [
-            "继续完成",
+            "continue",
             "commit to git",
             "commit to git and push to remote",
             "commit to git and push to remote and create pr with description refined",
@@ -33,7 +33,7 @@ final class QuickReplyTests: XCTestCase {
     func testSubmitSequenceIsTextThenCarriageReturn() {
         XCTAssertEqual(ItermSendTextAction.submitSequence(text: "commit to git"),
                        ["commit to git", "\r"])
-        XCTAssertEqual(ItermSendTextAction.submitSequence(text: "继续完成").last, "\r")
+        XCTAssertEqual(ItermSendTextAction.submitSequence(text: "continue").last, "\r")
     }
 
     /// `\r`, not `\n` — Claude Code's raw-mode TUI submits on carriage return.

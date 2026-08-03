@@ -14,7 +14,7 @@ struct QuickReply: Identifiable, Equatable {
 
     static let all: [QuickReply] = [
         QuickReply(id: "continue", symbol: "play.fill",
-                   label: "继续完成", text: "继续完成"),
+                   label: "Continue", text: "continue"),
         QuickReply(id: "commit", symbol: "arrow.triangle.branch",
                    label: "Commit to git", text: "commit to git"),
         QuickReply(id: "commit-push", symbol: "arrow.up.circle",
