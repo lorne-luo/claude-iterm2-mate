@@ -275,9 +275,7 @@ struct DetailView: View {
                 controls
             }
         } else {
-            let text = Text(item.fullMessage)
-                .font(.system(size: 12))
-                .textSelection(.enabled)
+            let text = SelectableMessageView(text: item.fullMessage)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
             if scrolls {

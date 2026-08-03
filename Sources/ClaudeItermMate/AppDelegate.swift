@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var focusAction: ItermFocusAction { ItermFocusAction() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.installEditMenu()
         coordinator = ReminderCoordinator(store: store, toastPanel: ToastPanel(usage: usage), usage: usage)
         Self.configureReminderSettings(on: coordinator)
         coordinator.onActivate = { [weak self] item in self?.activate(item) }
@@ -198,6 +199,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// AppleScript strings take no backslash escapes: drop backslashes, swap
     /// double quotes for curly quotes, and flatten newlines to keep the single
     /// `-e` line valid. An empty subtitle/body segment is omitted.
+    /// An accessory app has no main menu, so ⌘C has no key equivalent to resolve
+    /// and the detail popup's text selection could never be copied — the
+    /// keystroke fell through to whatever app was frontmost, which is why the
+    /// clipboard held something unrelated to the selection. The menu bar itself
+    /// is never shown (`.accessory`); it exists purely so `performKeyEquivalent`
+    /// finds `copy:`/`selectAll:` for the key panel.
+    static func installEditMenu() {
+        guard NSApp.mainMenu == nil else { return }
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        let copy = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        let selectAll = NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(copy)
+        edit.addItem(selectAll)
+        editItem.submenu = edit
+        let main = NSMenu()
+        main.addItem(editItem)
+        NSApp.mainMenu = main
+    }
+
     private func desktopNotify(title: String, subtitle: String, body: String) {
         func sanitize(_ s: String) -> String {
             s.replacingOccurrences(of: "\\", with: "")
