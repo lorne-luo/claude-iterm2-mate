@@ -47,11 +47,13 @@ enum EdgeGeometry {
         )
     }
 
-    /// Top-right corner, inset by the screen margin, at the given size.
-    static func toastFrame(size: CGSize, visible: CGRect) -> CGRect {
+    /// Top-right corner, inset by `margin`, at the given size. The info toast
+    /// passes 0 to sit flush against the corner — its card already carries an
+    /// 8pt shadow inset, which reads as the gap.
+    static func toastFrame(size: CGSize, visible: CGRect, margin: CGFloat = screenMargin) -> CGRect {
         CGRect(
-            x: visible.maxX - screenMargin - size.width,
-            y: visible.maxY - screenMargin - size.height,
+            x: visible.maxX - margin - size.width,
+            y: visible.maxY - margin - size.height,
             width: size.width,
             height: size.height
         )

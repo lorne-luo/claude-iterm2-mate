@@ -58,4 +58,13 @@ final class EdgeGeometryTests: XCTestCase {
         XCTAssertEqual(f.maxY, visible.maxY - EdgeGeometry.screenMargin)
         XCTAssertEqual(f.size, size)
     }
+
+    /// The info toast passes margin 0 to sit flush in the corner.
+    func testToastFrameHonorsMarginOverride() {
+        let size = CGSize(width: 360, height: 72)
+        let f = EdgeGeometry.toastFrame(size: size, visible: visible, margin: 0)
+        XCTAssertEqual(f.maxX, visible.maxX)
+        XCTAssertEqual(f.maxY, visible.maxY)
+        XCTAssertEqual(f.size, size)
+    }
 }

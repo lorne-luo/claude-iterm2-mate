@@ -23,7 +23,11 @@ final class InfoToastPanel {
         let root = InfoToastView(title: title, message: message, icon: icon, tint: tint)
         let visible = NSScreen.main?.visibleFrame ?? .zero
         let height = Self.fittingHeight(root)
-        let frame = EdgeGeometry.toastFrame(size: CGSize(width: Self.width, height: height), visible: visible)
+        // margin 0: flush to the corner. The card's own 8pt shadow inset is the
+        // only gap — the default 12pt on top of it read as floating too far in.
+        let frame = EdgeGeometry.toastFrame(
+            size: CGSize(width: Self.width, height: height), visible: visible, margin: 0
+        )
         // No interaction needed — it dismisses itself — so it never becomes key.
         let panel = PanelFactory.makePanel(frame: frame, canBecomeKey: false)
         panel.contentView = NSHostingView(rootView: root)
