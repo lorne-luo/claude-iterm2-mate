@@ -56,22 +56,40 @@ struct ItermSendTextAction {
 
     /// Send the answer to the pane. Runs each fragment sequentially (order
     /// matters) and blocks briefly per spawn; callers dispatch off-main.
-    func answer(sessionUUID: String, answer: Answer, optionCount: Int) {
+    /// Returns false when the answer did not reach the pane — `it2` exits
+    /// non-zero (e.g. `Session '…' not found`, exit 3, which the iTerm2 Python
+    /// API produces intermittently) while `Process.run()` still succeeds, so the
+    /// status has to be checked or the failure is completely silent.
+    @discardableResult
+    func answer(sessionUUID: String, answer: Answer, optionCount: Int) -> Bool {
         guard let it2URL else {
             Self.log.info("it2 unavailable; answer injection skipped")
-            return
+            return false
         }
         for fragment in Self.injectionSequence(answer, optionCount: optionCount) {
             let p = Process()
             p.executableURL = it2URL
             p.arguments = Self.arguments(sessionUUID: sessionUUID, fragment: fragment)
+            // it2 explains the failure on stderr; without a pipe it lands on the
+            // app's inherited stderr where nobody looks.
+            let errPipe = Pipe()
+            p.standardError = errPipe
             do {
                 try p.run()
+                // Read before waiting: a full pipe buffer would deadlock the child.
+                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
+                guard p.terminationStatus == 0 else {
+                    let detail = String(data: errData, encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    Self.log.error("answer send exited \(p.terminationStatus): \(detail, privacy: .public)")
+                    return false
+                }
             } catch {
                 Self.log.error("answer send failed: \(error.localizedDescription)")
-                return
+                return false
             }
         }
+        return true
     }
 }

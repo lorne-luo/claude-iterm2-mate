@@ -81,10 +81,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // hook also clears it once the answer lands.
         // One implementation shared by the detail popup and the toast, so
         // answering/chatting behaves identically from either surface.
+        // A failed injection (it2 exits non-zero — most often the Python API
+        // failing to resolve a live session) must not be silent: the tab is
+        // already gone, so without this the answer just vanishes.
         let answerHandler: (ReminderItem, ItermSendTextAction.Answer, Int) -> Void = { [weak self] item, answer, optionCount in
             DispatchQueue.global(qos: .userInitiated).async {
-                ItermSendTextAction()
+                let sent = ItermSendTextAction()
                     .answer(sessionUUID: item.sessionUUID, answer: answer, optionCount: optionCount)
+                guard !sent else { return }
+                DispatchQueue.main.async {
+                    self?.desktopNotify(
+                        title: "Answer not delivered",
+                        subtitle: item.projectName,
+                        body: "iTerm2 rejected the keystrokes — answer in the pane instead."
+                    )
+                }
             }
             self?.store.remove(sessionUUID: item.sessionUUID)
         }

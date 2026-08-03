@@ -158,6 +158,12 @@ final class ToastPanel: ToastPanelProtocol {
         guard let panel else { return }
         self.panel = nil
         shownItem = nil
+        // The fade/fly-out lasts 0.2–0.35 s during which the panel is still on
+        // screen and still hit-testable, but the coordinator has already dropped
+        // its `displayed` token — a click landing here is silently discarded
+        // (`guard displayed?.token == token`). Stop taking clicks the moment the
+        // toast starts dying, so the press falls through to whatever is behind.
+        panel.ignoresMouseEvents = true
         guard intoTab else {
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.2
